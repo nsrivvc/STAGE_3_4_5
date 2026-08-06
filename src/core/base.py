@@ -42,10 +42,22 @@ class SilverTransformation(ABC):
     def __init__(self) -> None:
         self.bronze_schema = settings.bronze_schema
         self.silver_schema = settings.silver_schema
+        self.decomp_schema = settings.decomp_schema
         if not self.name:
             raise ValueError(f"{type(self).__name__} must set a `name`.")
         if not self.table_name:
             raise ValueError(f"{type(self).__name__} must set a `table_name`.")
+
+    @property
+    def source_schema(self) -> str:
+        """Schema the runner checks `bronze_sources` against.
+
+        Defaults to Bronze, which is what a straight Bronze -> Silver
+        transformation wants. Override it when a transformation reads from a
+        later stage instead (e.g. the rec-del pairing classes, which read the
+        decomposition phase's output).
+        """
+        return self.bronze_schema
 
     # --- implement these in each subclass ------------------------------------
     @abstractmethod

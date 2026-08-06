@@ -105,9 +105,24 @@ def inspect() -> None:
         print("-" * 72)
         if not REGISTRY:
             print("  (no transformations registered)")
+
+        # Transformations may read from schemas other than Bronze (e.g. the
+        # rec-del pairing classes read the decomposition output), so count rows
+        # per source schema rather than assuming Bronze.
+        counts_by_schema: Dict[str, Dict[str, int]] = {bronze_schema: bronze_counts}
+        for t in REGISTRY.values():
+            if t.source_schema not in counts_by_schema:
+                counts_by_schema[t.source_schema] = (
+                    {i.name: i.row_count for i in snapshot_schema(conn, t.source_schema)}
+                    if schema_exists(conn, t.source_schema)
+                    else {}
+                )
+
         for name in sorted(REGISTRY):
             t = REGISTRY[name]
-            missing = [s for s in t.bronze_sources if s not in bronze_counts]
+            src_schema = t.source_schema
+            src_counts = counts_by_schema[src_schema]
+            missing = [s for s in t.bronze_sources if s not in src_counts]
             target_exists = t.table_name in silver_names
             if missing:
                 status = "BLOCKED"
@@ -117,10 +132,11 @@ def inspect() -> None:
                 status = "READY  "
             print(f"\n  [{status}] {name}")
             for src in t.bronze_sources:
-                if src in bronze_counts:
-                    print(f"      reads {bronze_schema}.{src:<16} {bronze_counts[src]:>8} rows")
+                label = f"{src_schema}.{src}"
+                if src in src_counts:
+                    print(f"      reads {label:<40} {src_counts[src]:>8} rows")
                 else:
-                    print(f"      reads {bronze_schema}.{src:<16}   MISSING")
+                    print(f"      reads {label:<40}   MISSING")
             if target_exists:
                 note = f"target silver table exists ({silver_schema}.{t.table_name}) -> run will be skipped"
             else:

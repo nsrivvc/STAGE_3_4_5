@@ -1,0 +1,78 @@
+name: rec-del-pairing
+
+# Takes each type's locations table from the decomposition phase and pairs
+# receipts to deliveries, writing silver.<type>_rec_del_pair.
+#
+# Runs everything registered in src/transformations/stage_4/rec_del_pairing/ via
+# `run.py --group`, so new modules dropped into that folder are picked up with
+# no change to this file. The selector matches on any folder segment, so it keeps
+# working if the component is moved between stages.
+#
+# Downstream: master_capacity.yml consumes these tables and is scheduled after
+# this workflow. If pairing here starts taking longer than its offset, widen the
+# gap there rather than tightening this one.
+on:
+  workflow_dispatch:
+    inputs:
+      transformation:
+        description: "'all' for the whole pairing stage, or one name (e.g. silver_firm_rec_del_pair)"
+        required: true
+        default: "all"
+  schedule:
+    # :45 past the hour — after the :00 Bronze ingestion and the :30
+    # Bronze -> Silver transform, so this consumes freshly-built upstream tables.
+    - cron: "45 * * * *"
+
+# Two runs writing the same Silver tables would clobber each other, so let an
+# in-flight run finish rather than cancelling it mid-transaction.
+concurrency:
+  group: rec-del-pairing
+  cancel-in-progress: false
+
+jobs:
+  pair:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRONZE_SCHEMA: bronze
+      SILVER_SCHEMA: silver
+      # Where the decomposition phase lands its output — this stage reads it.
+      # Must match what that phase actually writes to; see src/config.py.
+      DECOMP_SCHEMA: silver_staging
+      LOG_LEVEL: INFO
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Fails fast if the secret was never set, instead of falling through to
+      # config.py's localhost default and dying with a confusing connect error.
+      - name: Check DATABASE_URL is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set for this repository."
+            exit 1
+          fi
+
+      - name: Inspect (before)
+        run: python run.py --inspect
+
+      - name: Run rec-del pairing
+        run: |
+          INPUT="${{ github.event.inputs.transformation || 'all' }}"
+          if [ "$INPUT" = "all" ]; then
+            python run.py --group rec_del_pairing
+          else
+            python run.py --table "$INPUT"
+          fi
+
+      - name: Inspect (after)
+        if: always()
+        run: python run.py --inspect

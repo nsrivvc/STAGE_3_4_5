@@ -40,16 +40,67 @@ class Result:
     error: str = ""
 
 
-def list_transformations() -> List[str]:
-    return sorted(REGISTRY.keys())
+def group_of(t: SilverTransformation) -> str:
+    """The folder path a transformation lives in, or "" for a top-level module.
+
+    src.transformations.stage_4.rec_del_pairing.silver_firm_rec_del_pair
+        -> "stage_4/rec_del_pairing"
+    src.transformations.silver_firm_transport_rate
+        -> ""
+    """
+    parts = type(t).__module__.split(".")
+    try:
+        rest = parts[parts.index("transformations") + 1:]
+    except ValueError:  # pragma: no cover - transformation defined elsewhere
+        return ""
+    return "/".join(rest[:-1])
+
+
+def _in_group(path: str, group: str) -> bool:
+    """Whether a transformation's folder path is selected by `group`.
+
+    Matching is deliberately loose so a stage, a component, or the full path all
+    work as selectors, and so nesting a component under a stage later does not
+    invalidate existing callers:
+
+        "stage_4"                  -> everything in stage 4
+        "rec_del_pairing"          -> just that component, wherever it sits
+        "stage_4/rec_del_pairing"  -> the same, spelled out
+    """
+    group = group.strip("/")
+    if not group:
+        return path == ""
+    return (
+        path == group
+        or path.startswith(group + "/")
+        or group in path.split("/")
+    )
+
+
+def list_transformations(group: str | None = None) -> List[str]:
+    """All registered names, or just those selected by a group (see _in_group)."""
+    names = sorted(REGISTRY.keys())
+    if group is None:
+        return names
+    return [n for n in names if _in_group(group_of(REGISTRY[n]), group)]
+
+
+def list_groups() -> List[str]:
+    """Folder paths that currently contain at least one transformation."""
+    return sorted({g for g in (group_of(t) for t in REGISTRY.values()) if g})
 
 
 def _check_dependencies(conn, t: SilverTransformation) -> List[str]:
-    """Return the list of missing Bronze source tables (empty == all present)."""
+    """Return the list of missing source tables (empty == all present).
+
+    Sources are looked up in `t.source_schema`, which is Bronze for a plain
+    Bronze -> Silver transformation but a later stage for transformations that
+    build on one (see SilverTransformation.source_schema).
+    """
     missing = []
     for src in t.bronze_sources:
-        if not table_exists(conn, t.bronze_schema, src):
-            missing.append(f"{t.bronze_schema}.{src}")
+        if not table_exists(conn, t.source_schema, src):
+            missing.append(f"{t.source_schema}.{src}")
     return missing
 
 
@@ -71,7 +122,7 @@ def run_one(name: str) -> Result:
         with engine.begin() as conn:  # commits on success, rolls back on exception
             missing = _check_dependencies(conn, t)
             if missing:
-                msg = f"missing Bronze sources: {', '.join(missing)}"
+                msg = f"missing sources: {', '.join(missing)}"
                 log.warning("[%s] skipped — %s", name, msg)
                 return Result(name, "skipped", 0, time.perf_counter() - start, msg)
 
@@ -94,6 +145,26 @@ def run_one(name: str) -> Result:
 def run_all() -> List[Result]:
     """Run every registered transformation; continue past failures."""
     results = [run_one(name) for name in list_transformations()]
+    _summarize(results)
+    return results
+
+
+def run_group(group: str) -> List[Result]:
+    """Run every transformation in one phase folder; continue past failures.
+
+    An empty group is not an error — a phase folder that exists but holds no
+    transformations yet (e.g. master_capacity) is a no-op, so scheduled jobs can
+    reference it before the code lands without failing.
+    """
+    names = list_transformations(group)
+    if not names:
+        log.warning(
+            "Group %r has no registered transformations - nothing to do. Known groups: %s",
+            group, ", ".join(list_groups()) or "(none)",
+        )
+        return []
+    log.info("Running group %r: %s", group, ", ".join(names))
+    results = [run_one(name) for name in names]
     _summarize(results)
     return results
 

@@ -7,6 +7,7 @@ if python-dotenv is installed). Nothing is hardcoded.
 WHERE TO CHANGE THINGS:
   * Point at a different database  -> DATABASE_URL (or the PG* parts) in .env
   * Rename the raw/curated schemas -> BRONZE_SCHEMA / SILVER_SCHEMA in .env
+  * Rename the decomposition-output schema -> DECOMP_SCHEMA in .env
 """
 
 from __future__ import annotations
@@ -45,6 +46,10 @@ class Settings:
     database_url: str = field(default_factory=_build_url)
     bronze_schema: str = field(default_factory=lambda: os.getenv("BRONZE_SCHEMA", "bronze"))
     silver_schema: str = field(default_factory=lambda: os.getenv("SILVER_SCHEMA", "silver"))
+    # Where the decomposition phase lands its output tables. The rec-del pairing
+    # transformations read from here rather than from Bronze. Set DECOMP_SCHEMA
+    # once the decomposition phase exists and writes somewhere else.
+    decomp_schema: str = field(default_factory=lambda: os.getenv("DECOMP_SCHEMA", "silver_staging"))
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
 
 
