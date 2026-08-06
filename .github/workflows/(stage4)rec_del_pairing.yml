@@ -1,4 +1,4 @@
-name: rec-del-pairing
+name: (stage4)rec-del-pairing
 
 # Takes each type's locations table from the decomposition phase and pairs
 # receipts to deliveries, writing silver.<type>_rec_del_pair.
