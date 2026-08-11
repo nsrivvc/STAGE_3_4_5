@@ -38,6 +38,10 @@ def main(argv=None) -> int:
     group.add_argument("--all", action="store_true", help="Run all transformations")
     group.add_argument("--show-sql", metavar="NAME", help="Print a transformation's SQL and exit")
 
+    parser.add_argument("--source", metavar="FEED",
+                        help="Only run transformations for one JSON source feed: "
+                             "firm, interruptible (or it), awards, ioc, or final "
+                             "(the cross-feed tables). Narrows --all and --group.")
     parser.add_argument("--parquet-dir", metavar="DIR",
                         help="Directory for the Parquet export (overrides PARQUET_OUTPUT_DIR)")
     parser.add_argument("--no-parquet", action="store_true", help="Disable the Parquet export")
@@ -57,9 +61,17 @@ def main(argv=None) -> int:
     from src.core.registry import REGISTRY
 
     if args.list:
-        print("Registered transformations:")
-        for name in runner.list_transformations():
-            print(f"  - {name}  (reads: {', '.join(REGISTRY[name].bronze_sources)})")
+        names = runner.list_transformations(source=args.source)
+        header = "Registered transformations"
+        if args.source:
+            header += f" for source {args.source!r}"
+        print(f"{header}:")
+        for name in names:
+            t = REGISTRY[name]
+            print(f"  - {name}  [{runner.source_of(t)}]  "
+                  f"(reads: {', '.join(t.bronze_sources)})")
+        if not names:
+            print(f"  (none — known sources: {', '.join(runner.list_sources())})")
         return 0
 
     if args.show_sql:
@@ -96,11 +108,13 @@ def main(argv=None) -> int:
         return 1 if result.status == "failed" else 0
 
     if args.group:
-        results = runner.run_group(args.group, runner.new_export_context(), args.reload)
+        results = runner.run_group(
+            args.group, runner.new_export_context(), args.reload, args.source)
         return 1 if runner.any_failed(results) else 0
 
     if args.all:
-        results = runner.run_all(runner.new_export_context(), args.reload)
+        results = runner.run_all(
+            runner.new_export_context(), args.reload, args.source)
         return 1 if runner.any_failed(results) else 0
 
     return 0

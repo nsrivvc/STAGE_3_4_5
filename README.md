@@ -259,24 +259,42 @@ gitignored.
 `run.py` is a plain batch command that reads all config from environment
 variables, which makes it portable to any runner without code changes.
 
-Three ready-to-use workflows are included, one per stage:
+**26 workflows.** Stages 3 and 4 split by source feed; stage 5 splits by feed
+*and* grain, one file per table. Each runs, logs, fails and uploads independently.
 
-| Workflow | File | Runs |
-|---|---|---|
-| `bronze-to-silver` | `.github/workflows/(stage3)bronze_to_silver.yml` | `--all` |
-| `rec-del-pairing` | `.github/workflows/(stage4)rec_del_pairing.yml` | `--group rec_del_pairing` |
-| `master-capacity` | `.github/workflows/(stage5)master_capacity.yml` | `--group master_capacity` |
+| Stage | Files | Count | Runs |
+|---|---|---|---|
+| 3 | `(stage3)bronze_to_silver_<feed>.yml` | 4 | `--all --source <feed>` |
+| 4 | `(stage4)rec_del_pairing_<feed>.yml` | 4 | `--group rec_del_pairing --source <feed>` |
+| 5 | `(stage5)master_capacity_<group>_<grain>.yml` | 18 | `--group master_capacity/<group>/<grain>` |
 
-**All three are manual only — there are no cron schedules.** Nothing enforces
-stage ordering, so run them in order (3 → 4 → 5) from the Actions tab, giving
-each one time to finish before starting the next. To automate the chain later,
-add a `workflow_run` trigger keyed on the upstream workflow completing rather
-than reintroducing cron offsets, which only approximate the dependency.
+Stage 5's 18 = 6 groups (`firm`, `interruptible`, `awards`, `ioc`, `index`,
+`final`) × 3 grains (`core`, `locations`, `rates`). Each targets one folder
+under `src/transformations/stage_4/master_capacity/`, so whatever is registered
+there is what runs — no transformation names are hardcoded in any workflow, and
+a folder with no code yet is a logged no-op that exits 0.
+
+**All are manual only — there are no cron schedules, and nothing enforces
+ordering.** Run them by hand:
+
+1. Stage 3 for each feed (these are independent — they can run together).
+2. Stage 4 for each feed, once that feed's stage 3 has finished.
+3. Stage 5 for each feed.
+4. **`master_capacity_final` last.** The three FINAL tables aggregate across
+   every feed, so running it before the four per-feed stage 5 workflows have
+   finished produces finals over incomplete data.
+
+To automate the chain later, add `workflow_run` triggers keyed on the upstream
+workflow completing, rather than cron offsets which only approximate the
+dependency.
 
 Each workflow:
 
 - runs on manual dispatch only;
-- lets you pick `all` or a single transformation at dispatch time;
+- lets you pick `all` or a single transformation at dispatch time (a named
+  transformation bypasses the feed filter, since the name already pins it);
+- has a `concurrency` group scoped to its stage *and* feed, so feeds never block
+  each other but a run never collides with itself;
 - reads the Neon connection string from the `DATABASE_URL` repo secret (the same
   secret used by the ingestion repo — Settings → Secrets and variables →
   Actions), and fails fast with a clear error if it isn't set;

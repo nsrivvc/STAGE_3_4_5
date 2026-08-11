@@ -68,9 +68,12 @@ FIRM = "firm"
 INTERRUPTIBLE = "interruptible"
 AWARDS = "awards"
 IOC = "ioc"
+INDEX = "index"
 
-#: The four JSON source feeds, in pipeline order.
-SOURCES = (FIRM, INTERRUPTIBLE, AWARDS, IOC)
+#: The source feeds, in pipeline order. `index` is the gindex feed
+#: (bronze.gindex), which carries contract index records rather than a transport
+#: type; it gets its own directory for the same reason as the others.
+SOURCES = (FIRM, INTERRUPTIBLE, AWARDS, IOC, INDEX)
 
 #: Bucket for rows that span feeds or never declared one.
 COMBINED = "_combined"
@@ -87,6 +90,14 @@ _SOURCE_ALIASES = {
     "award": AWARDS,
     "awards": AWARDS,
     "ioc": IOC,
+    "index": INDEX,
+    "gindex": INDEX,
+    # Cross-feed output (the master capacity finals). Spelled several ways so
+    # `--source final` works as naturally as `--source _combined`.
+    "final": COMBINED,
+    "finals": COMBINED,
+    "combined": COMBINED,
+    COMBINED: COMBINED,
 }
 
 

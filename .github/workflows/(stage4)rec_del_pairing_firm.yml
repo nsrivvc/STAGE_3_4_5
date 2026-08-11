@@ -1,46 +1,40 @@
-name: (stage4)rec-del-pairing
+name: (stage4)rec-del-pairing [firm]
 
-# Takes each type's locations table from the decomposition phase and pairs
-# receipts to deliveries, writing silver.<type>_rec_del_pair.
+# Pairs receipts to deliveries for the FIRM feed, from that feed's
+# locations table produced by the decomposition phase.
 #
-# Runs everything registered in src/transformations/stage_4/rec_del_pairing/ via
-# `run.py --group`, so new modules dropped into that folder are picked up with
-# no change to this file. The selector matches on any folder segment, so it keeps
-# working if the component is moved between stages.
+# ONE FEED PER FILE: this workflow handles the FIRM feed and nothing else, so it
+# runs, logs, fails and uploads its Parquet completely independently of the other
+# feeds. Its sibling files cover the rest.
 #
-# MANUAL ONLY: no cron schedule. Run it from the Actions tab after stage 3 has
-# produced this stage's inputs.
-#
-# Downstream is (stage5)master_capacity.yml, which consumes these tables. Nothing
-# enforces that ordering now that the schedules are gone, so run the stages in
-# order by hand.
+# MANUAL ONLY: no cron schedule. Nothing enforces stage ordering, so run the
+# stages in order by hand. Upstream of this one: (stage3)bronze_to_silver_firm.yml
 on:
   workflow_dispatch:
     inputs:
       transformation:
-        description: "'all' for the whole pairing stage, or one name (e.g. silver_firm_rec_del_pair)"
+        description: "'all' for the whole feed, or one transformation name (ignores the feed filter)"
         required: true
         default: "all"
 
-# Two runs writing the same Silver tables would clobber each other, so let an
-# in-flight run finish rather than cancelling it mid-transaction.
+# Scoped to this stage AND feed, so the feeds never block each other but a run
+# never collides with itself mid-transaction.
 concurrency:
-  group: rec-del-pairing
+  group: stage4-firm
   cancel-in-progress: false
 
 jobs:
-  pair:
+  run:
     runs-on: ubuntu-latest
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       BRONZE_SCHEMA: bronze
       SILVER_SCHEMA: silver
-      # Where the decomposition phase lands its output — this stage reads it.
-      # Must match what that phase actually writes to; see src/config.py.
+      # Where the decomposition phase lands its output; this stage reads it.
       DECOMP_SCHEMA: silver_staging
-      # Stage numbering follows the workflows, so each one produces a single
-      # stage directory under parquet_output/.
+      # Stage numbering follows the workflows; the feed subdirectory below it
+      # comes from the transformations' own `source` attribute.
       PARQUET_STAGE: stage4
       PARQUET_OUTPUT_DIR: parquet_output
       LOG_LEVEL: INFO
@@ -64,14 +58,17 @@ jobs:
             exit 1
           fi
 
+      - name: What will run for firm
+        run: python run.py --list --source firm
+
       - name: Inspect (before)
         run: python run.py --inspect
 
-      - name: Run rec-del pairing
+      - name: Run rec-del-pairing (firm)
         run: |
           INPUT="${{ github.event.inputs.transformation || 'all' }}"
           if [ "$INPUT" = "all" ]; then
-            python run.py --group rec_del_pairing
+            python run.py --group rec_del_pairing --source firm
           else
             python run.py --table "$INPUT"
           fi
@@ -86,6 +83,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: silver-parquet-stage4-${{ github.run_id }}
+          name: silver-parquet-stage4-firm-${{ github.run_id }}
           path: parquet_output/
           if-no-files-found: warn

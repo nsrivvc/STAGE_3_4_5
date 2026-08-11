@@ -1,0 +1,86 @@
+name: (stage3)bronze-to-silver [awards]
+
+# Reads the Bronze tables and (re)builds the Silver tables for the
+# AWARDS feed only.
+#
+# ONE FEED PER FILE: this workflow handles the AWARDS feed and nothing else, so it
+# runs, logs, fails and uploads its Parquet completely independently of the other
+# feeds. Its sibling files cover the rest.
+#
+# MANUAL ONLY: no cron schedule. Nothing enforces stage ordering, so run the
+# stages in order by hand. Upstream of this one: Bronze ingestion (upstream repo).
+on:
+  workflow_dispatch:
+    inputs:
+      transformation:
+        description: "'all' for the whole feed, or one transformation name (ignores the feed filter)"
+        required: true
+        default: "all"
+
+# Scoped to this stage AND feed, so the feeds never block each other but a run
+# never collides with itself mid-transaction.
+concurrency:
+  group: stage3-awards
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRONZE_SCHEMA: bronze
+      SILVER_SCHEMA: silver
+      # Stage numbering follows the workflows; the feed subdirectory below it
+      # comes from the transformations' own `source` attribute.
+      PARQUET_STAGE: stage3
+      PARQUET_OUTPUT_DIR: parquet_output
+      LOG_LEVEL: INFO
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Fails fast if the secret was never set, instead of falling through to
+      # config.py's localhost default and dying with a confusing connect error.
+      - name: Check DATABASE_URL is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set for this repository."
+            exit 1
+          fi
+
+      - name: What will run for awards
+        run: python run.py --list --source awards
+
+      - name: Inspect (before)
+        run: python run.py --inspect
+
+      - name: Run bronze-to-silver (awards)
+        run: |
+          INPUT="${{ github.event.inputs.transformation || 'all' }}"
+          if [ "$INPUT" = "all" ]; then
+            python run.py --all --source awards
+          else
+            python run.py --table "$INPUT"
+          fi
+
+      - name: Inspect (after)
+        if: always()
+        run: python run.py --inspect
+
+      # Runners are ephemeral, so the export has to leave the machine. `always()`
+      # keeps a partial export when a DB write failed, which is when it helps most.
+      - name: Upload Parquet export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: silver-parquet-stage3-awards-${{ github.run_id }}
+          path: parquet_output/
+          if-no-files-found: warn

@@ -67,26 +67,54 @@ def _in_group(path: str, group: str) -> bool:
     work as selectors, and so nesting a component under a stage later does not
     invalidate existing callers:
 
-        "stage_4"                  -> everything in stage 4
-        "rec_del_pairing"          -> just that component, wherever it sits
-        "stage_4/rec_del_pairing"  -> the same, spelled out
+        "stage_4"                       -> everything in stage 4
+        "rec_del_pairing"               -> just that component, wherever it sits
+        "stage_4/rec_del_pairing"       -> the same, spelled out
+        "master_capacity/firm/core"     -> one leaf, without naming its stage
+
+    The last form is why this matches a *contiguous run* of segments rather than
+    just a prefix: workflows address a leaf folder by its own path, and should
+    not have to repeat the stage that happens to contain it today.
     """
     group = group.strip("/")
     if not group:
         return path == ""
-    return (
-        path == group
-        or path.startswith(group + "/")
-        or group in path.split("/")
-    )
+    want = group.split("/")
+    have = path.split("/")
+    return any(have[i:i + len(want)] == want for i in range(len(have) - len(want) + 1))
 
 
-def list_transformations(group: str | None = None) -> List[str]:
-    """All registered names, or just those selected by a group (see _in_group)."""
+def source_of(t: SilverTransformation) -> str:
+    """Canonical JSON source feed for a transformation ("firm", "ioc", ...).
+
+    Anything cross-feed or undeclared resolves to "_combined".
+    """
+    from ..parquet_export import normalize_source
+
+    return normalize_source(t.source)
+
+
+def list_transformations(group: str | None = None, source: str | None = None) -> List[str]:
+    """All registered names, narrowed by phase folder and/or JSON source feed.
+
+    The two filters are independent and compose: group picks the stage or
+    component, source picks the feed, so a workflow can run exactly one feed of
+    one stage.
+    """
+    from ..parquet_export import normalize_source
+
     names = sorted(REGISTRY.keys())
-    if group is None:
-        return names
-    return [n for n in names if _in_group(group_of(REGISTRY[n]), group)]
+    if group is not None:
+        names = [n for n in names if _in_group(group_of(REGISTRY[n]), group)]
+    if source is not None:
+        wanted = normalize_source(source)
+        names = [n for n in names if source_of(REGISTRY[n]) == wanted]
+    return names
+
+
+def list_sources() -> List[str]:
+    """Source feeds that currently have at least one transformation."""
+    return sorted({source_of(t) for t in REGISTRY.values()})
 
 
 def list_groups() -> List[str]:
@@ -181,28 +209,41 @@ def new_export_context() -> "ExportContext | None":
     return ctx
 
 
-def run_all(ctx: "ExportContext | None" = None, reload: bool = False) -> List[Result]:
+def run_all(ctx: "ExportContext | None" = None, reload: bool = False,
+            source: str | None = None) -> List[Result]:
     """Run every registered transformation; continue past failures."""
-    results = [run_one(name, ctx, reload) for name in list_transformations()]
+    names = list_transformations(source=source)
+    if source is not None and not names:
+        log.warning(
+            "No transformations for source %r - nothing to do. Known sources: %s",
+            source, ", ".join(list_sources()) or "(none)",
+        )
+        return []
+    results = [run_one(name, ctx, reload) for name in names]
     _summarize(results)
     return results
 
 
-def run_group(group: str, ctx: "ExportContext | None" = None, reload: bool = False) -> List[Result]:
+def run_group(group: str, ctx: "ExportContext | None" = None, reload: bool = False,
+              source: str | None = None) -> List[Result]:
     """Run every transformation in one phase folder; continue past failures.
 
     An empty group is not an error — a phase folder that exists but holds no
     transformations yet (e.g. master_capacity) is a no-op, so scheduled jobs can
     reference it before the code lands without failing.
     """
-    names = list_transformations(group)
+    names = list_transformations(group, source)
     if not names:
         log.warning(
-            "Group %r has no registered transformations - nothing to do. Known groups: %s",
-            group, ", ".join(list_groups()) or "(none)",
+            "Group %r%s has no registered transformations - nothing to do. "
+            "Known groups: %s | known sources: %s",
+            group, f" / source {source!r}" if source else "",
+            ", ".join(list_groups()) or "(none)",
+            ", ".join(list_sources()) or "(none)",
         )
         return []
-    log.info("Running group %r: %s", group, ", ".join(names))
+    log.info("Running group %r%s: %s", group,
+             f" / source {source!r}" if source else "", ", ".join(names))
     results = [run_one(name, ctx, reload) for name in names]
     _summarize(results)
     return results

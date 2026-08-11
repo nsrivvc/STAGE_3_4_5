@@ -1,0 +1,87 @@
+name: (stage5)master-capacity [final rates]
+
+# Master capacity - FINAL / RATES.
+#
+# Consolidates every feed's rates master capacity table into one.
+# This is the tie-together step, so its rows are cross-feed and export
+# under `_combined` rather than any single feed's directory.
+#
+# ONE TABLE PER FILE: this workflow builds final_rates_master_capacity and nothing
+# else, so it runs, logs, fails and uploads its Parquet independently of the
+# other 17. It targets a single folder, so whatever is registered there is what
+# runs -- no transformation names are hardcoded here.
+#
+#     src/transformations/stage_4/master_capacity/final/rates/
+#
+# MANUAL ONLY: no cron schedule. Nothing enforces ordering. Run this AFTER the five
+# per-feed rates workflows, or it consolidates incomplete data.
+on:
+  workflow_dispatch:
+    inputs:
+      transformation:
+        description: "'all' for this folder, or one transformation name"
+        required: true
+        default: "all"
+
+concurrency:
+  group: stage5-final-rates
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRONZE_SCHEMA: bronze
+      SILVER_SCHEMA: silver
+      DECOMP_SCHEMA: silver_staging
+      PARQUET_STAGE: stage5
+      PARQUET_OUTPUT_DIR: parquet_output
+      LOG_LEVEL: INFO
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check DATABASE_URL is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set for this repository."
+            exit 1
+          fi
+
+      - name: What will run
+        run: python run.py --list-groups
+
+      - name: Inspect (before)
+        run: python run.py --inspect
+
+      - name: Run master capacity (final rates)
+        run: |
+          INPUT="${{ github.event.inputs.transformation || 'all' }}"
+          if [ "$INPUT" = "all" ]; then
+            python run.py --group master_capacity/final/rates
+          else
+            python run.py --table "$INPUT"
+          fi
+
+      - name: Inspect (after)
+        if: always()
+        run: python run.py --inspect
+
+      # Runners are ephemeral, so the export has to leave the machine. `always()`
+      # keeps a partial export when a DB write failed, which is when it helps most.
+      - name: Upload Parquet export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: silver-parquet-stage5-final-rates-${{ github.run_id }}
+          path: parquet_output/
+          if-no-files-found: warn
