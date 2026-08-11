@@ -72,14 +72,24 @@ jobs:
       - name: Inspect (before)
         run: python run.py --inspect
 
-      - name: Run bronze-to-silver (ioc)
+      # Stage 3 is four phases and ORDER MATTERS. The folder suffixes carry it:
+      # deduplication(p1) -> ammendments(p2) -> decompisition(p3) -> standardization(p4).
+      # `--group stage_3` would run them alphabetically, putting ammendments
+      # before deduplication -- hence the explicit loop.
+      #
+      # A phase folder with no code yet logs a warning and exits 0.
+      - name: Run stage 3 phases (ioc)
         run: |
           INPUT="${{ github.event.inputs.transformation || 'all' }}"
-          if [ "$INPUT" = "all" ]; then
-            python run.py --all --source ioc
-          else
+          if [ "$INPUT" != "all" ]; then
             python run.py --table "$INPUT"
+            exit 0
           fi
+          for PHASE in "deduplication(p1)" "ammendments(p2)" "decompisition(p3)" "standardization(p4)"; do
+            echo "::group::$PHASE"
+            python run.py --group "$PHASE" --source ioc
+            echo "::endgroup::"
+          done
 
       - name: Inspect (after)
         if: always()

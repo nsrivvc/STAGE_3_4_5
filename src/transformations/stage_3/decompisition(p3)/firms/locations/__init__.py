@@ -1,0 +1,2 @@
+"""firms / locations decomposition.
+"""

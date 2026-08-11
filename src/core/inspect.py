@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from ..config import settings
-from ..db.connection import get_engine
+from ..db.connection import get_engine, table_exists
 from ..logging_config import get_logger
 from .registry import REGISTRY
 
@@ -123,7 +123,7 @@ def inspect() -> None:
             src_schema = t.source_schema
             src_counts = counts_by_schema[src_schema]
             missing = [s for s in t.bronze_sources if s not in src_counts]
-            target_exists = t.table_name in silver_names
+            target_exists = table_exists(conn, t.target_schema, t.table_name)
             if missing:
                 status = "BLOCKED"
             elif target_exists:
@@ -138,9 +138,9 @@ def inspect() -> None:
                 else:
                     print(f"      reads {label:<40}   MISSING")
             if target_exists:
-                note = f"target silver table exists ({silver_schema}.{t.table_name}) -> run will be skipped"
+                note = f"target table exists ({t.target_schema}.{t.table_name}) -> run will be skipped"
             else:
-                note = f"target silver table not created yet ({silver_schema}.{t.table_name})"
+                note = f"target table not created yet ({t.target_schema}.{t.table_name})"
             print(f"      -> {note}")
     print()
 

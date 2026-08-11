@@ -83,6 +83,17 @@ class SilverTransformation(ABC):
         return ""
 
     @property
+    def target_schema(self) -> str:
+        """Schema this transformation writes `table_name` into.
+
+        Defaults to Silver. The stage-3 decomposition overrides it to write the
+        staging schema that stage 4 reads (`DECOMP_SCHEMA`). The runner's
+        load-once check and `--inspect` both follow this, so a table outside
+        Silver is still detected correctly.
+        """
+        return self.silver_schema
+
+    @property
     def source_schema(self) -> str:
         """Schema the runner checks `bronze_sources` against.
 

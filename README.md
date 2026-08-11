@@ -320,6 +320,49 @@ logs a warning and exits 0.
 To run any of them: push the repo, add the `DATABASE_URL` secret, then Actions →
 pick the workflow → **Run workflow**.
 
+### Triggering from the ingestion repo
+
+`firm(stage3_4_5).yml` accepts a `repository_dispatch` of type
+`bronze-firm-loaded`, so `nsrivvc/json--bronze--postgres` can kick off the Silver
+pipeline the moment its Bronze load finishes.
+
+**`workflow_run` does not work here** — it only observes workflows in the *same*
+repository. Cross-repo requires an explicit dispatch, and a job's default
+`GITHUB_TOKEN` is scoped to its own repo and cannot dispatch to another one. So
+this needs a token with `contents: write` on this repo (a fine-grained PAT or a
+GitHub App installation token), stored in the ingestion repo as e.g.
+`SILVER_REPO_TOKEN`.
+
+Add this as the last step of `bronze_ingest_firm.yml` in the ingestion repo:
+
+```yaml
+      # Only on success: a failed load must not kick off Silver over bad data.
+      - name: Trigger Silver firm pipeline
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.SILVER_REPO_TOKEN }}
+        run: |
+          gh api repos/nsrivvc/bronze_to_silver_conversion/dispatches \
+            -f event_type=bronze-firm-loaded \
+            -f 'client_payload[ingest_run_id]=${{ github.run_id }}' \
+            -F 'client_payload[run_final]=false'
+```
+
+`run_final=false` is deliberate: a firm ingest says nothing about whether the
+other feeds are current, and the FINAL tables consolidate all of them. Send
+`true` only when every feed is known fresh.
+
+The same pattern extends to the other feeds — add a matching
+`repository_dispatch` type to each orchestrator (`bronze-interruptible-loaded`
+and so on) and a dispatch step to that feed's ingestion workflow.
+
+**No, the database itself cannot be the trigger.** Neon emits no webhook on
+data change, and `LISTEN`/`NOTIFY` needs a process holding a connection open,
+which a runner cannot do between runs. Polling on a schedule is the only
+DB-driven alternative, and this repo deliberately has no schedules. A DB check
+works as a *guard* (skip when `bronze.ingestion_log` shows nothing new) but not
+as a trigger — the dispatch above is the reliable signal.
+
 For schedulers:
 
 - **Azure Container Apps job** — build a small image (`python:3.11-slim`,

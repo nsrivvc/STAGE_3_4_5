@@ -137,8 +137,8 @@ def _check_dependencies(conn, t: SilverTransformation) -> List[str]:
 
 
 def _silver_table_exists(conn, t: SilverTransformation) -> bool:
-    """True if this transformation's Silver table has already been created."""
-    return table_exists(conn, t.silver_schema, t.table_name)
+    """True if this transformation's target table has already been created."""
+    return table_exists(conn, t.target_schema, t.table_name)
 
 
 def _export_context(t: SilverTransformation, ctx: "ExportContext | None"):
@@ -174,14 +174,14 @@ def run_one(name: str, ctx: "ExportContext | None" = None, reload: bool = False)
 
             if _silver_table_exists(conn, t):
                 if not reload:
-                    msg = f"silver table already exists: {t.silver_schema}.{t.table_name}"
+                    msg = f"target table already exists: {t.target_schema}.{t.table_name}"
                     log.info("[%s] skipped — %s", name, msg)
                     return Result(name, "skipped", 0, time.perf_counter() - start, msg)
                 # --reload: drop and rebuild so the table refreshes from source
                 # and produces a Parquet export. Inside the same transaction, so
                 # a failed rebuild leaves the existing table untouched.
-                log.warning("[%s] reload — dropping %s.%s", name, t.silver_schema, t.table_name)
-                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {t.silver_schema}.{t.table_name}")
+                log.warning("[%s] reload - dropping %s.%s", name, t.target_schema, t.table_name)
+                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {t.target_schema}.{t.table_name}")
 
             rows = t.run(conn, _export_context(t, ctx))
         dur = time.perf_counter() - start
