@@ -35,6 +35,7 @@ from ..core.registry import register
 class SilverFirmTransportRate(SilverTransformation):
     name = "silver_firm_transport_rate"
     table_name = "firm_transport_rate"
+    source = "firm"
     bronze_sources = ["gtran_firm", "gtran_rates", "gtran_loc"]
 
     # ------------------------------------------------------------------ DDL

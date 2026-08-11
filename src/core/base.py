@@ -27,9 +27,15 @@ SQLAlchemy. The runner passes a live Connection to run().
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import TYPE_CHECKING, List
 
 from ..config import settings
+from ..logging_config import get_logger
+
+if TYPE_CHECKING:  # for type hints only; keeps pyarrow out of the import path
+    from ..parquet_export import ExportContext
+
+log = get_logger(__name__)
 
 
 class SilverTransformation(ABC):
@@ -37,6 +43,12 @@ class SilverTransformation(ABC):
     name: str = ""                 # e.g. "silver_firm_transport_rate"
     table_name: str = ""           # e.g. "firm_transport_rate" (lives in silver_schema)
     bronze_sources: List[str] = []  # e.g. ["gtran_firm", "gtran_rates", "gtran_loc"]
+
+    # Which of the four JSON source feeds these rows come from: "firm",
+    # "interruptible" (aka IT), "awards" or "ioc". Used to partition the Parquet
+    # export by feed. Leave empty for anything genuinely cross-feed (e.g. the
+    # master capacity finals) and it files under "_combined".
+    source: str = ""
 
     # --- schema names come from config so they're not hardcoded --------------
     def __init__(self) -> None:
@@ -69,12 +81,44 @@ class SilverTransformation(ABC):
         """Idempotent load: INSERT ... SELECT ... ON CONFLICT (...) DO UPDATE ... ."""
 
     # --- default execution; override only for non-SQL (pure-Python) loads ----
-    def run(self, conn) -> int:
+    def run(self, conn, ctx: "ExportContext | None" = None) -> int:
         """Create the table if needed, then upsert. Returns rows affected.
 
         `conn` is a SQLAlchemy Connection supplied by the runner inside a
         transaction, so partial failures roll back automatically.
+
+        THE PARQUET EXPORT HOOK LIVES HERE, and this is the only place any
+        transformation writes rows — so every stage, present and future, is
+        exported with no per-stage code.
+
+        When `ctx` is supplied, `RETURNING *` is appended to the transform so
+        the rows written come back to Python, get written to Parquet, and only
+        then does the transaction commit. The rows are the DB's own output, not
+        a reconstruction, and a failed write rolls back both sides.
+
+        Note the export happens after the INSERT statement but before COMMIT:
+        the rows do not exist until the INSERT produces them, so exporting
+        strictly "before the database write" isn't possible without abandoning
+        the set-based SQL design. Nothing is exported that wasn't durably
+        written, and nothing is written without being exported.
+
+        Overriding this method for a pure-Python load means opting out of the
+        export unless the override calls parquet_export.export_rows itself.
         """
         conn.exec_driver_sql(self.create_table_sql())
-        result = conn.exec_driver_sql(self.transform_sql())
-        return result.rowcount if result.rowcount is not None else -1
+
+        # Trailing semicolon has to go before RETURNING can be appended.
+        sql = self.transform_sql().rstrip().rstrip(";")
+
+        if ctx is None:
+            result = conn.exec_driver_sql(sql)
+            return result.rowcount if result.rowcount is not None else -1
+
+        from .. import parquet_export
+
+        rows = [dict(r) for r in conn.exec_driver_sql(f"{sql}\nRETURNING *").mappings().all()]
+        path = parquet_export.export_for_stage(
+            self.table_name, rows, ctx=ctx, source=self.source)
+        if path:
+            log.info("[%s] parquet: %s", self.name, path)
+        return len(rows)

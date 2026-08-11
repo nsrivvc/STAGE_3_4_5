@@ -42,6 +42,10 @@ jobs:
       # Carried through in case a master capacity transformation reads the
       # decomposition output directly rather than only the paired tables.
       DECOMP_SCHEMA: silver_staging
+      # Stage numbering follows the workflows, so each one produces a single
+      # stage directory under parquet_output/.
+      PARQUET_STAGE: stage5
+      PARQUET_OUTPUT_DIR: parquet_output
       LOG_LEVEL: INFO
 
     steps:
@@ -76,3 +80,13 @@ jobs:
       - name: Inspect (after)
         if: always()
         run: python run.py --inspect
+
+      # Runners are ephemeral, so the export has to leave the machine. `always()`
+      # keeps a partial export when a DB write failed, which is when it helps most.
+      - name: Upload Parquet export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: silver-parquet-stage5-${{ github.run_id }}
+          path: parquet_output/
+          if-no-files-found: warn

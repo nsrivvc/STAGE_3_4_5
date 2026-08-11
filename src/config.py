@@ -50,6 +50,15 @@ class Settings:
     # transformations read from here rather than from Bronze. Set DECOMP_SCHEMA
     # once the decomposition phase exists and writes somewhere else.
     decomp_schema: str = field(default_factory=lambda: os.getenv("DECOMP_SCHEMA", "silver_staging"))
+    # Parquet export. Every table's rows are written here before the transaction
+    # commits. Set PARQUET_OUTPUT_DIR to "" to turn the export off entirely.
+    parquet_output_dir: str = field(
+        default_factory=lambda: os.getenv("PARQUET_OUTPUT_DIR", "parquet_output"))
+    # Top-level folder each run's files land under. Stage numbering follows the
+    # workflows (bronze_to_silver=stage3, rec_del_pairing=stage4,
+    # master_capacity=stage5), so each workflow sets this. Left empty, it falls
+    # back to the transformation's own folder (stage_3 / stage_4).
+    parquet_stage: str = field(default_factory=lambda: os.getenv("PARQUET_STAGE", ""))
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
 
 

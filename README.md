@@ -141,6 +141,8 @@ python run.py --table silver_firm_transport_rate     # run one transformation
 python run.py --group rec_del_pairing                # run one component
 python run.py --group stage_4                        # run a whole stage
 python run.py --all                                  # run all of them
+python run.py --all --reload                         # rebuild tables that already exist
+python run.py --all --no-parquet                     # skip the Parquet export
 ```
 
 `--group` matches on any folder segment, so a component can be selected by its
@@ -208,6 +210,50 @@ present — that's the signal a drop is needed before it will load again.
 > This bites hardest while iterating on unfinished business rules: once a table
 > is created, editing its SQL changes nothing until you drop it.
 
+## Parquet export
+
+Every table's rows are also written to Parquet, from a single hook in
+`base.run()` — the one place any transformation writes. A new stage or table is
+exported with **no export-code changes**.
+
+```
+parquet_output/<stage>/<source>/<table>/run_date=YYYY-MM-DD/<run_id>.parquet
+```
+
+- **`<stage>`** comes from `PARQUET_STAGE`, which each workflow sets, so one
+  workflow run produces exactly one stage directory and one uploaded artifact.
+  Unset, it falls back to the transformation's own folder.
+- **`<source>`** is the JSON feed the rows came from — `firm`, `interruptible`
+  (aka IT), `awards`, `ioc` — so one feed can be read without scanning the
+  others. Cross-feed tables (the master capacity finals) land in `_combined`.
+  Each transformation declares this via its `source` attribute; the rec-del
+  classes derive it from `entity` automatically.
+- **`<run_id>`** is shared by every table in a run, so one run's output is
+  greppable.
+
+`src/parquet_export.py` holds the mechanics in `export_rows` (no stage or table
+knowledge) plus a dedicated function per stage — `export_stage3_rows`,
+`export_stage4_rows`, `export_stage5_rows` — so a stage can diverge later without
+disturbing the others. `export_for_stage` dispatches, falling back to the generic
+exporter for a stage with no dedicated function.
+
+The export runs **after the INSERT but before COMMIT**. The rows don't exist
+until the INSERT produces them (the transforms are `INSERT … SELECT`, executed
+entirely server-side), so exporting strictly before the write isn't possible
+without abandoning the set-based design. `RETURNING *` is appended to the
+transform, so the exported rows are the database's own output — nothing is
+exported that wasn't durably written, and nothing is written without being
+exported.
+
+Turn it off with `PARQUET_OUTPUT_DIR=""` or `--no-parquet`. `parquet_output/` is
+gitignored.
+
+> **A transformation that skips exports nothing**, because it writes nothing.
+> With the load-once gate, that means a scheduled run produces no Parquet after
+> the first one. Use `--reload` to drop and rebuild a table (inside the same
+> transaction, so a failed rebuild leaves the existing table intact) and get a
+> fresh export.
+
 ## Running it on a schedule
 
 `run.py` is a plain batch command that reads all config from environment
@@ -218,9 +264,9 @@ consumes freshly-built upstream tables:
 
 | Workflow | File | Cron | Runs |
 |---|---|---|---|
-| `bronze-to-silver` | `.github/workflows/bronze_to_silver.yml` | `:30` | `--all` |
-| `rec-del-pairing` | `.github/workflows/rec_del_pairing.yml` | `:45` | `--group rec_del_pairing` |
-| `master-capacity` | `.github/workflows/master_capacity.yml` | `:55` | `--group master_capacity` |
+| `bronze-to-silver` | `.github/workflows/(stage3)bronze_to_silver.yml` | `:30` | `--all` |
+| `rec-del-pairing` | `.github/workflows/(stage4)rec_del_pairing.yml` | `:45` | `--group rec_del_pairing` |
+| `master-capacity` | `.github/workflows/(stage5)master_capacity.yml` | `:55` | `--group master_capacity` |
 
 (Bronze ingestion runs at `:00` in the upstream repo.) Each workflow:
 

@@ -40,6 +40,10 @@ jobs:
       # Where the decomposition phase lands its output — this stage reads it.
       # Must match what that phase actually writes to; see src/config.py.
       DECOMP_SCHEMA: silver_staging
+      # Stage numbering follows the workflows, so each one produces a single
+      # stage directory under parquet_output/.
+      PARQUET_STAGE: stage4
+      PARQUET_OUTPUT_DIR: parquet_output
       LOG_LEVEL: INFO
 
     steps:
@@ -76,3 +80,13 @@ jobs:
       - name: Inspect (after)
         if: always()
         run: python run.py --inspect
+
+      # Runners are ephemeral, so the export has to leave the machine. `always()`
+      # keeps a partial export when a DB write failed, which is when it helps most.
+      - name: Upload Parquet export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: silver-parquet-stage4-${{ github.run_id }}
+          path: parquet_output/
+          if-no-files-found: warn

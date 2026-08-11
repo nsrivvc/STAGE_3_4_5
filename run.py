@@ -37,7 +37,20 @@ def main(argv=None) -> int:
     group.add_argument("--list-groups", action="store_true", help="List phase folders that contain transformations")
     group.add_argument("--all", action="store_true", help="Run all transformations")
     group.add_argument("--show-sql", metavar="NAME", help="Print a transformation's SQL and exit")
+
+    parser.add_argument("--parquet-dir", metavar="DIR",
+                        help="Directory for the Parquet export (overrides PARQUET_OUTPUT_DIR)")
+    parser.add_argument("--no-parquet", action="store_true", help="Disable the Parquet export")
+    parser.add_argument("--reload", action="store_true",
+                        help="Drop and rebuild tables that already exist, instead of skipping them")
     args = parser.parse_args(argv)
+
+    # Applied before any transformation imports settings-derived values.
+    from src.config import settings
+    if args.parquet_dir:
+        settings.parquet_output_dir = args.parquet_dir
+    if args.no_parquet:
+        settings.parquet_output_dir = ""
 
     # Import here so --help works without importing the DB stack.
     from src.core import runner
@@ -79,15 +92,15 @@ def main(argv=None) -> int:
         return 0
 
     if args.table:
-        result = runner.run_one(args.table)
+        result = runner.run_one(args.table, runner.new_export_context(), args.reload)
         return 1 if result.status == "failed" else 0
 
     if args.group:
-        results = runner.run_group(args.group)
+        results = runner.run_group(args.group, runner.new_export_context(), args.reload)
         return 1 if runner.any_failed(results) else 0
 
     if args.all:
-        results = runner.run_all()
+        results = runner.run_all(runner.new_export_context(), args.reload)
         return 1 if runner.any_failed(results) else 0
 
     return 0
