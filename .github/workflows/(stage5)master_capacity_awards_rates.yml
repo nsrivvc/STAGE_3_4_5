@@ -14,6 +14,16 @@ name: (stage5)master-capacity [awards rates]
 # MANUAL ONLY: no cron schedule. Nothing enforces ordering. Run after stage 4 for this
 # feed, and before (stage5)master_capacity_final_rates.yml.
 on:
+  # Callable from the per-feed <feed>(stage...).yml orchestrator. Inputs are
+  # optional; unset, the steps fall back to 'all' as on a manual dispatch.
+  workflow_call:
+    inputs:
+      transformation:
+        description: "'all', or one transformation name"
+        required: false
+        type: string
+        default: "all"
+
   workflow_dispatch:
     inputs:
       transformation:

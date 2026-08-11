@@ -13,6 +13,16 @@ name: (stage4)rec-del-pairing [firm]
 # MANUAL ONLY: no cron schedule. Nothing enforces stage ordering, so run the
 # stages in order by hand. Upstream of this one: (stage3)bronze_to_silver_firm.yml
 on:
+  # Callable from the firm(stage3_4_5).yml orchestrator. Inputs are optional;
+  # unset, the steps fall back to 'all' exactly as on a manual dispatch.
+  workflow_call:
+    inputs:
+      transformation:
+        description: "'all', or one transformation name"
+        required: false
+        type: string
+        default: "all"
+
   workflow_dispatch:
     inputs:
       transformation:

@@ -1,0 +1,85 @@
+name: interruptible (stage 3-4-5)
+
+# End-to-end run for the INTERRUPTIBLE feed: stage 3, then 4, then 5, then the three
+# cross-feed FINAL tables.
+#
+# This is an orchestrator, not a copy. Each job calls the real per-stage
+# workflow file as a reusable workflow, so there is exactly one definition of
+# what each stage does. Editing a stage's own .yml changes it here too.
+#
+#
+# READ THIS BEFORE TRUSTING THE FINAL TABLES
+# ------------------------------------------
+# The FINAL tables consolidate EVERY feed, not just interruptible. Running them from a
+# interruptible-only chain rebuilds them from interruptible's fresh rows plus whatever the other
+# feeds last left behind. That is correct only if the other feeds are already
+# up to date. If they are not, run their stages first, or dispatch this with
+# run_final = false and run the FINAL workflows separately once every feed has
+# landed.
+on:
+  workflow_dispatch:
+    inputs:
+      run_final:
+        description: "Also rebuild the cross-feed FINAL tables (see note above)"
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: interruptible-end-to-end
+  cancel-in-progress: false
+
+jobs:
+  stage3:
+    name: stage 3 - bronze to silver
+    uses: "./.github/workflows/(stage3)bronze_to_silver_interruptible.yml"
+    secrets: inherit
+
+  stage4:
+    name: stage 4 - rec-del pairing
+    needs: stage3
+    uses: "./.github/workflows/(stage4)rec_del_pairing_interruptible.yml"
+    secrets: inherit
+
+  stage5_core:
+    name: stage 5 - interruptible core
+    needs: stage4
+    uses: "./.github/workflows/(stage5)master_capacity_interruptible_core.yml"
+    secrets: inherit
+
+  stage5_locations:
+    name: stage 5 - interruptible locations
+    needs: stage4
+    uses: "./.github/workflows/(stage5)master_capacity_interruptible_locations.yml"
+    secrets: inherit
+
+  stage5_rates:
+    name: stage 5 - interruptible rates
+    needs: stage4
+    uses: "./.github/workflows/(stage5)master_capacity_interruptible_rates.yml"
+    secrets: inherit
+
+  # The FINAL tables are cross-feed, so they wait for all three stage-5 jobs.
+  # `!cancelled()` rather than success() so one failing grain still lets the
+  # others consolidate, matching the standalone FINAL workflows.
+
+  final_core:
+    name: final - core
+    needs: [stage5_core, stage5_locations, stage5_rates]
+    if: ${{ !cancelled() && inputs.run_final }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_core.yml"
+    secrets: inherit
+
+  final_locations:
+    name: final - locations
+    needs: [stage5_core, stage5_locations, stage5_rates]
+    if: ${{ !cancelled() && inputs.run_final }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_locations.yml"
+    secrets: inherit
+
+  final_rates:
+    name: final - rates
+    needs: [stage5_core, stage5_locations, stage5_rates]
+    if: ${{ !cancelled() && inputs.run_final }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_rates.yml"
+    secrets: inherit

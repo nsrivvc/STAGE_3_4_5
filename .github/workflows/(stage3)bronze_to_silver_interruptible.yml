@@ -10,6 +10,16 @@ name: (stage3)bronze-to-silver [interruptible]
 # MANUAL ONLY: no cron schedule. Nothing enforces stage ordering, so run the
 # stages in order by hand. Upstream of this one: Bronze ingestion (upstream repo).
 on:
+  # Callable from the per-feed <feed>(stage...).yml orchestrator. Inputs are
+  # optional; unset, the steps fall back to 'all' as on a manual dispatch.
+  workflow_call:
+    inputs:
+      transformation:
+        description: "'all', or one transformation name"
+        required: false
+        type: string
+        default: "all"
+
   workflow_dispatch:
     inputs:
       transformation:
