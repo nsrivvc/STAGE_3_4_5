@@ -13,8 +13,8 @@ the expected decomposition output. Verify both once that phase lands.
 
 from __future__ import annotations
 
-from .pairing_base import RecDelPairingTransformation
-from ....core.registry import register
+from ..pairing_base import RecDelPairingTransformation
+from .....core.registry import register
 
 
 @register

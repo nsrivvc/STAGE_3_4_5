@@ -55,10 +55,32 @@ class SilverTransformation(ABC):
         self.bronze_schema = settings.bronze_schema
         self.silver_schema = settings.silver_schema
         self.decomp_schema = settings.decomp_schema
+        if not self.source:
+            self.source = self._infer_source()
         if not self.name:
             raise ValueError(f"{type(self).__name__} must set a `name`.")
         if not self.table_name:
             raise ValueError(f"{type(self).__name__} must set a `table_name`.")
+
+    def _infer_source(self) -> str:
+        """Derive the JSON source feed from the folder this module lives in.
+
+        The stage-5 layout already encodes the feed in the path
+        (master_capacity/firm/core/...), so a module that doesn't declare
+        `source` still gets its Parquet filed under the right feed instead of
+        silently landing in `_combined`. An explicit `source` always wins.
+
+        A `final/` segment means cross-feed and maps to `_combined`, which is
+        what those tables actually are.
+        """
+        from ..parquet_export import COMBINED, SOURCES
+
+        for part in type(self).__module__.split("."):
+            if part in SOURCES:
+                return part
+            if part in ("final", "finals"):
+                return COMBINED
+        return ""
 
     @property
     def source_schema(self) -> str:

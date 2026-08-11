@@ -6,7 +6,7 @@ package. Not a transformation itself -- it registers nothing.
 
 WHAT THIS DOES
 --------------
-Each transport type (firm, interruptible, awards, IOC) produces a *locations*
+Each paired transport type (firm and interruptible only) produces a *locations*
 table at the end of the decomposition phase, holding one row per location with a
 purpose flag marking it a receipt (REC) or a delivery (DEL). This base turns that
 flat list into one row per receipt->delivery **path**, then hangs the term
@@ -51,7 +51,7 @@ from ....core.base import SilverTransformation
 
 class RecDelPairingTransformation(SilverTransformation):
     # --- set these in each subclass ------------------------------------------
-    entity: str = ""            # "firm" | "interruptible" | "awards" | "ioc"
+    entity: str = ""            # "firm" | "interruptible" (pairing applies to these only)
     locations_table: str = ""   # source table, in the decomposition schema
 
     # Which `loc_purpose` values mean receipt vs delivery. Compared upper-cased.

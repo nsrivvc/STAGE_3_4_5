@@ -1,15 +1,19 @@
 """
 rec_del_pairing
 ===============
-Receipt/delivery pairing: turns each type's flat locations table (from the
+Receipt/delivery pairing: turns a feed's flat locations table (from the
 decomposition phase) into one row per receipt->delivery path, then hangs the
 term transform off each paired row.
 
-    pairing_base.py                    shared logic + the two `SPEC:` hooks
-    silver_firm_rec_del_pair.py        firm
-    silver_interruptible_rec_del_pair.py   interruptible
-    silver_awards_rec_del_pair.py      awards          (dormant: no feed yet)
-    silver_ioc_rec_del_pair.py         ioc             (dormant: no feed yet)
+PAIRING APPLIES TO FIRM AND INTERRUPTIBLE ONLY. Awards and IOC have no
+receipt/delivery path structure to pair, so they are not represented here and
+have no stage-4 workflow. They pick up again at stage 5.
 
-The parent package discovers these automatically -- no imports needed here.
+    pairing_base.py           shared mechanics + the two `SPEC:` hooks
+    firm/                     firm pairing
+    interruptible/            interruptible (IT) pairing
+
+Each feed is its own package so their rules can diverge -- override
+`pair_predicate_sql()` or `term_columns_sql()` on one subclass and the other is
+untouched. The parent package discovers these automatically.
 """
