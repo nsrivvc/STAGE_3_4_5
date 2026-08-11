@@ -9,10 +9,6 @@ on:
         description: "Which transformation to run: 'all' or a specific name (e.g. silver_firm_transport_rate)"
         required: true
         default: "all"
-  schedule:
-    # Runs at :30 past each hour — offset AFTER the :00 Bronze ingestion so
-    # Silver transforms freshly-landed data. Adjust to your cadence.
-    - cron: "30 * * * *"
 
 jobs:
   transform:

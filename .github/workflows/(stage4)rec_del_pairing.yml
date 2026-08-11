@@ -8,9 +8,12 @@ name: (stage4)rec-del-pairing
 # no change to this file. The selector matches on any folder segment, so it keeps
 # working if the component is moved between stages.
 #
-# Downstream: master_capacity.yml consumes these tables and is scheduled after
-# this workflow. If pairing here starts taking longer than its offset, widen the
-# gap there rather than tightening this one.
+# MANUAL ONLY: no cron schedule. Run it from the Actions tab after stage 3 has
+# produced this stage's inputs.
+#
+# Downstream is (stage5)master_capacity.yml, which consumes these tables. Nothing
+# enforces that ordering now that the schedules are gone, so run the stages in
+# order by hand.
 on:
   workflow_dispatch:
     inputs:
@@ -18,10 +21,6 @@ on:
         description: "'all' for the whole pairing stage, or one name (e.g. silver_firm_rec_del_pair)"
         required: true
         default: "all"
-  schedule:
-    # :45 past the hour — after the :00 Bronze ingestion and the :30
-    # Bronze -> Silver transform, so this consumes freshly-built upstream tables.
-    - cron: "45 * * * *"
 
 # Two runs writing the same Silver tables would clobber each other, so let an
 # in-flight run finish rather than cancelling it mid-transaction.

@@ -12,11 +12,13 @@ name: (stage5)master-capacity
 # workflow is therefore safe to enable now and starts doing real work the moment
 # the first module lands.
 #
-# Upstream: rec_del_pairing.yml, scheduled at :45. This runs at :55 to let that
-# finish first. Cron offsets are how this repo sequences stages (:00 ingestion,
-# :30 Bronze -> Silver, :45 pairing, :55 here). If pairing ever outgrows that
-# 10-minute gap, either widen this offset or switch to a `workflow_run` trigger
-# keyed on rec-del-pairing completing.
+# MANUAL ONLY: no cron schedule. Run it from the Actions tab when its upstream
+# stages have finished.
+#
+# Upstream is (stage4)rec_del_pairing.yml. Nothing enforces that ordering now
+# that the schedules are gone, so run the stages in order by hand. To automate
+# it later, add a `workflow_run` trigger keyed on rec-del-pairing completing
+# rather than reintroducing cron offsets.
 on:
   workflow_dispatch:
     inputs:
@@ -24,8 +26,6 @@ on:
         description: "'all' for the whole master capacity stage, or one transformation name"
         required: true
         default: "all"
-  schedule:
-    - cron: "55 * * * *"
 
 concurrency:
   group: master-capacity

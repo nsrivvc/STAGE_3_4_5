@@ -254,23 +254,28 @@ gitignored.
 > transaction, so a failed rebuild leaves the existing table intact) and get a
 > fresh export.
 
-## Running it on a schedule
+## Running it in CI
 
 `run.py` is a plain batch command that reads all config from environment
-variables, which makes it portable to any scheduler without code changes.
+variables, which makes it portable to any runner without code changes.
 
-Three ready-to-use workflows are included, sequenced by cron offset so each
-consumes freshly-built upstream tables:
+Three ready-to-use workflows are included, one per stage:
 
-| Workflow | File | Cron | Runs |
-|---|---|---|---|
-| `bronze-to-silver` | `.github/workflows/(stage3)bronze_to_silver.yml` | `:30` | `--all` |
-| `rec-del-pairing` | `.github/workflows/(stage4)rec_del_pairing.yml` | `:45` | `--group rec_del_pairing` |
-| `master-capacity` | `.github/workflows/(stage5)master_capacity.yml` | `:55` | `--group master_capacity` |
+| Workflow | File | Runs |
+|---|---|---|
+| `bronze-to-silver` | `.github/workflows/(stage3)bronze_to_silver.yml` | `--all` |
+| `rec-del-pairing` | `.github/workflows/(stage4)rec_del_pairing.yml` | `--group rec_del_pairing` |
+| `master-capacity` | `.github/workflows/(stage5)master_capacity.yml` | `--group master_capacity` |
 
-(Bronze ingestion runs at `:00` in the upstream repo.) Each workflow:
+**All three are manual only — there are no cron schedules.** Nothing enforces
+stage ordering, so run them in order (3 → 4 → 5) from the Actions tab, giving
+each one time to finish before starting the next. To automate the chain later,
+add a `workflow_run` trigger keyed on the upstream workflow completing rather
+than reintroducing cron offsets, which only approximate the dependency.
 
-- runs on its `cron` schedule and on manual dispatch;
+Each workflow:
+
+- runs on manual dispatch only;
 - lets you pick `all` or a single transformation at dispatch time;
 - reads the Neon connection string from the `DATABASE_URL` repo secret (the same
   secret used by the ingestion repo — Settings → Secrets and variables →
@@ -278,23 +283,18 @@ consumes freshly-built upstream tables:
 - runs `python run.py --inspect` before and after, so the run log shows inputs
   and the resulting Silver row counts.
 
-The two stage-4 workflows each have their own `concurrency` group, so a run never
-collides with itself but the two stages don't block each other. They select work
+The stage 4 and 5 workflows each have their own `concurrency` group, so a run
+never collides with itself but the two don't block each other. They select work
 by folder rather than by a hardcoded list, so modules added to those folders are
 picked up with no workflow change.
 
-`master-capacity` is safe to enable now: with nothing registered in that folder
-it logs a warning and exits 0.
-
-Because the two stage-4 workflows are separate, they relate only through the
-clock — `:55` gives pairing a 10-minute window. If pairing ever outgrows it,
-widen the offset or switch master capacity to a `workflow_run` trigger keyed on
-pairing completing.
+`master-capacity` is safe to run now: with nothing registered in that folder it
+logs a warning and exits 0.
 
 To run any of them: push the repo, add the `DATABASE_URL` secret, then Actions →
 pick the workflow → **Run workflow**.
 
-For other schedulers:
+For schedulers:
 
 - **Azure Container Apps job** — build a small image (`python:3.11-slim`,
   `pip install -r requirements.txt`, `CMD ["python","run.py","--all"]`) and set
