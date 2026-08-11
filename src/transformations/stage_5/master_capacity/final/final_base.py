@@ -51,8 +51,10 @@ from typing import Dict, List, Tuple
 
 from .....core.base import SilverTransformation
 
-#: The four JSON source feeds, in pipeline order.
-FEEDS = ("firm", "interruptible", "awards", "ioc")
+#: The source feeds consolidated into each FINAL table, in pipeline order.
+#: Must stay in step with the per-feed folders under master_capacity/ and with
+#: the (stage5)master_capacity_<feed>_<grain>.yml workflows.
+FEEDS = ("firm", "interruptible", "awards", "ioc", "index")
 
 
 class FinalMasterCapacityTransformation(SilverTransformation):

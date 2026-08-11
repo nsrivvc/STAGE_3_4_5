@@ -9,7 +9,7 @@ name: (stage5)master-capacity [awards core]
 # other 17. It targets a single folder, so whatever is registered there is what
 # runs -- no transformation names are hardcoded here.
 #
-#     src/transformations/stage_4/master_capacity/awards/core/
+#     src/transformations/stage_5/master_capacity/awards/core/
 #
 # MANUAL ONLY: no cron schedule. Nothing enforces ordering. Run after stage 4 for this
 # feed, and before (stage5)master_capacity_final_core.yml.

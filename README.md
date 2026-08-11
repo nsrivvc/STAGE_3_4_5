@@ -1,4 +1,4 @@
-# Silver Staging (Stages 3–4)
+# Silver Staging (Stages 3–5)
 
 A modular batch system that reads **Bronze** tables from a data source, applies
 transformation logic, and writes curated **Silver** tables. This repo handles
@@ -22,11 +22,13 @@ not. Current state:
 | 3 | `deduplication/` | Scaffolded, empty `logic.txt` |
 | 3 | `ammendments/` | Scaffolded, empty `logic.txt` |
 | 4 | `rec_del_pairing/` | **Wired end-to-end**, two business rules pending |
-| 4 | `master_capacity/` | Scaffolded, empty `logic.txt` |
+| 5 | `master_capacity/<feed>/<grain>/` | Scaffolded (15 folders), empty `logic.txt` |
+| 5 | `master_capacity/final/<grain>/` | **Wired end-to-end**, column models pending |
 
 Stage 3 splits each feed into core / locations / rates per type, standardizes and
-deduplicates it, and applies amendments. Stage 4 pairs receipts to deliveries and
-assembles master capacity.
+deduplicates it, and applies amendments. Stage 4 pairs receipts to deliveries.
+Stage 5 assembles master capacity per feed, then ties every feed together into
+the three FINAL tables.
 
 > The stage-3 folders contain no `.py` files, so `find -name "*.py"` won't show
 > them and git won't track the empty directories. They exist.
@@ -73,13 +75,17 @@ src/
       rec_del_pairing/
         pairing_base.py       shared pairing logic + the two SPEC hooks
         silver_{firm,interruptible,awards,ioc}_rec_del_pair.py
+    stage_5/
       master_capacity/
-        awards/ firms/ index/ interruptibles/    per-type assembly
-        final/{core,locations,rates}/            the three FINAL tables
+        {firm,interruptible,awards,ioc,index}/{core,locations,rates}/
+                              per-feed assembly, one package per table
+        final/
+          final_base.py       shared UNION-across-feeds logic + SPEC hooks
+          {core,locations,rates}/   the three FINAL tables
 ```
 
-Folders are named `stage_3` / `stage_4`, not `stage 3`, because they are imported
-as Python packages.
+Folders are named `stage_3` / `stage_4` / `stage_5`, not `stage 3`, because they
+are imported as Python packages.
 
 - **One file per Silver table.** Each subclasses `SilverTransformation` and
   provides `table_name`, `create_table_sql()`, and `transform_sql()`.
@@ -140,6 +146,8 @@ python run.py --show-sql silver_firm_transport_rate  # inspect SQL (no DB needed
 python run.py --table silver_firm_transport_rate     # run one transformation
 python run.py --group rec_del_pairing                # run one component
 python run.py --group stage_4                        # run a whole stage
+python run.py --group master_capacity/firm/core      # run one leaf folder
+python run.py --source firm                          # run one source feed
 python run.py --all                                  # run all of them
 python run.py --all --reload                         # rebuild tables that already exist
 python run.py --all --no-parquet                     # skip the Parquet export
@@ -164,7 +172,7 @@ flag the job.
 ## Add a new Silver table
 
 1. Copy `src/transformations/silver_firm_transport_rate.py` into the folder for
-   its stage/component, e.g. `stage_4/master_capacity/final/core/`.
+   its stage/component, e.g. `stage_5/master_capacity/final/core/`.
 2. Change five things (each is commented in the example):
    - the class name and `name` (registry key / CLI name)
    - `table_name` (the bare table name created in the Silver schema — the
@@ -270,7 +278,7 @@ variables, which makes it portable to any runner without code changes.
 
 Stage 5's 18 = 6 groups (`firm`, `interruptible`, `awards`, `ioc`, `index`,
 `final`) × 3 grains (`core`, `locations`, `rates`). Each targets one folder
-under `src/transformations/stage_4/master_capacity/`, so whatever is registered
+under `src/transformations/stage_5/master_capacity/`, so whatever is registered
 there is what runs — no transformation names are hardcoded in any workflow, and
 a folder with no code yet is a logged no-op that exits 0.
 

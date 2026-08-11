@@ -41,14 +41,14 @@ Two things worth settling before writing any of this:
     names -- unlike everything else this repo writes. Decide whether these
     transformations target `public.final_*` as-is or a Silver-schema equivalent.
   * Evergreen / NoticePeriodDays / CalculatedEndDate / TermNotes are term
-    fields, so the term transform hook in ../rec_del_pairing/pairing_base.py
+    fields, so the term transform hook in ../../stage_4/rec_del_pairing/pairing_base.py
     most likely feeds this table. Settle that before implementing either.
 
 TO ADD ONE
 ----------
 Drop a module in the relevant folder with a @register-ed SilverTransformation
 subclass. The parent package discovers subfolders recursively, so no imports are
-needed here. See ../rec_del_pairing/ for a multi-type component sharing one base
+needed here. See ../../stage_4/rec_del_pairing/ for a multi-type component sharing one base
 class, or ../../silver_firm_transport_rate.py for a standalone one.
 
 See logic.txt in each folder for the business rules.
