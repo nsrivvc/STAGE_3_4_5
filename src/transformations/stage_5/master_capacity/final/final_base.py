@@ -37,12 +37,18 @@ the wiring exist before the rules are written:
   4. `dedupe_note`    what to do when the same contract appears in more than one
      feed. The placeholder keeps both rows, distinguished by `source_type`.
 
-BLOCKED UNTIL THE PER-FEED TABLES EXIST
----------------------------------------
-`source_tables` lists all four feeds, so the runner reports these as skipped
-until every one of them exists. To consolidate only the feeds that are live
-(firm and interruptible today), delete the other entries from `source_tables` on
-the subclass -- everything else adjusts automatically.
+CONSOLIDATES WHATEVER RAN
+-------------------------
+A workflow in the orchestration interface can pull any subset of sources -- Firm
+alone, Firm + IT, all four. So these do NOT require every feed. At run time they
+look up which per-feed tables actually exist and union exactly those, naming the
+absent ones in the log.
+
+Requiring all four would leave the FINAL tables permanently blocked for any
+workflow that pulls a subset, which is the normal case rather than the exception.
+With no feeds present at all, there is nothing to consolidate: it logs and
+returns 0 rather than failing, because the workflow is simply ahead of its
+inputs.
 """
 
 from __future__ import annotations
@@ -50,11 +56,16 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 
 from .....core.base import SilverTransformation
+from .....db.connection import table_exists
+from .....logging_config import get_logger
 
-#: The source feeds consolidated into each FINAL table, in pipeline order.
-#: Must stay in step with the per-feed folders under master_capacity/ and with
-#: the (stage5)master_capacity_<feed>_<grain>.yml workflows.
-FEEDS = ("firm", "interruptible", "awards", "ioc", "index")
+log = get_logger(__name__)
+
+#: The source feeds that can be consolidated, matching the toggles in the
+#: orchestration interface: Firm, Interruptible, Awards, Index of Customers.
+#: A feed listed here that has not run is simply absent from the UNION -- see
+#: `run()` below -- so this can safely list every feed that MIGHT exist.
+FEEDS = ("firm", "interruptible", "awards", "index")
 
 
 class FinalMasterCapacityTransformation(SilverTransformation):
@@ -74,6 +85,10 @@ class FinalMasterCapacityTransformation(SilverTransformation):
 
     # These are cross-feed by nature, so `source` stays empty and the Parquet
     # export files them under `_combined` rather than any one feed.
+    #: A FINAL table consolidates whatever ran, rather than requiring
+    #: every feed -- the interface allows pulling any subset.
+    sources_required = False
+
     source: str = ""
 
     def __init__(self) -> None:
@@ -143,9 +158,12 @@ class FinalMasterCapacityTransformation(SilverTransformation):
         col_names = [name for name, _ in self.columns]
         insert_cols = ",\n            ".join(["source_type", *col_names])
 
+        # Only the feeds detected at run time by run(). Falls back to every known
+        # feed so `--show-sql` still renders something meaningful offline.
+        active = getattr(self, "_active_sources", None) or self.source_tables
         union = "\n            UNION ALL\n".join(
             self.projection_sql(feed, table).strip()
-            for feed, table in self.source_tables.items()
+            for feed, table in active.items()
         )
 
         # Everything except the natural key is refreshed on conflict.
@@ -172,3 +190,39 @@ class FinalMasterCapacityTransformation(SilverTransformation):
         ON CONFLICT ({key_cols}) DO UPDATE SET
             {updates}silver_loaded_ts                   = now();
         """
+
+    # ------------------------------------------------------------------ run
+    def run(self, conn, ctx=None) -> int:
+        """Consolidate whichever feeds are present, not all of them.
+
+        A workflow in the orchestration interface can pull any subset of sources
+        -- Firm only, Firm + IT, all four. Whatever ran produced its per-feed
+        master capacity table; whatever did not, did not. So this looks up which
+        of those tables actually exist and unions exactly those.
+
+        The alternative -- requiring all four -- would leave the FINAL tables
+        permanently blocked for any workflow that pulls a subset, which is the
+        normal case rather than the exception.
+
+        With no feeds present at all there is nothing to consolidate, so it logs
+        and returns 0 rather than failing: the workflow is legitimately ahead of
+        its inputs.
+        """
+        present = {
+            feed: table
+            for feed, table in self.source_tables.items()
+            if table_exists(conn, self.source_schema, table)
+        }
+        missing = [f for f in self.source_tables if f not in present]
+        if not present:
+            log.warning(
+                "[%s] no per-feed tables exist yet (looked for %s in %s) - nothing to consolidate",
+                self.name, ", ".join(self.source_tables.values()), self.source_schema)
+            return 0
+        log.info("[%s] consolidating %d feed(s): %s%s", self.name, len(present),
+                 ", ".join(present), f"  (absent: {', '.join(missing)})" if missing else "")
+        self._active_sources = present
+        try:
+            return super().run(conn, ctx)
+        finally:
+            self._active_sources = None

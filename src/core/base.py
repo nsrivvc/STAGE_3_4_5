@@ -44,6 +44,12 @@ class SilverTransformation(ABC):
     table_name: str = ""           # e.g. "firm_transport_rate" (lives in silver_schema)
     bronze_sources: List[str] = []  # e.g. ["gtran_firm", "gtran_rates", "gtran_loc"]
 
+    # When True the runner skips the transformation unless EVERY listed source
+    # exists. Set False when a transformation can work from whichever subset is
+    # present -- the master capacity finals consolidate whatever feeds have run,
+    # rather than waiting for all of them.
+    sources_required: bool = True
+
     # Which of the four JSON source feeds these rows come from: "firm",
     # "interruptible" (aka IT), "awards" or "ioc". Used to partition the Parquet
     # export by feed. Leave empty for anything genuinely cross-feed (e.g. the

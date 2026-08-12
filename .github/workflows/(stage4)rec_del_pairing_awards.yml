@@ -1,19 +1,20 @@
-name: (stage4)rec-del-pairing [interruptible]
+name: (stage4)rec-del-pairing [awards]
 
-# Pairs receipts to deliveries for the INTERRUPTIBLE feed, from that feed's
+# Pairs receipts to deliveries for the AWARDS feed, from that feed's
 # locations table produced by the decomposition phase.
 #
-# PAIRING COVERS FIRM, INTERRUPTIBLE AND AWARDS. IOC has no stage 4.
+# PAIRING IS AWARDS AND INTERRUPTIBLE ONLY -- awards and IOC have no
+# receipt/delivery paths to pair, so there are two of these, not four.
 #
-# ONE FEED PER FILE: this workflow handles the INTERRUPTIBLE feed and nothing else, so it
+# ONE FEED PER FILE: this workflow handles the AWARDS feed and nothing else, so it
 # runs, logs, fails and uploads its Parquet completely independently of the other
 # feeds. Its sibling files cover the rest.
 #
 # MANUAL ONLY: no cron schedule. Nothing enforces stage ordering, so run the
-# stages in order by hand. Upstream of this one: (stage3)bronze_to_silver_interruptible.yml
+# stages in order by hand. Upstream of this one: (stage3)bronze_to_silver_awards.yml
 on:
-  # Callable from the per-feed <feed>(stage...).yml orchestrator. Inputs are
-  # optional; unset, the steps fall back to 'all' as on a manual dispatch.
+  # Callable from the awards(stage3_4_5).yml orchestrator. Inputs are optional;
+  # unset, the steps fall back to 'all' exactly as on a manual dispatch.
   workflow_call:
     inputs:
       transformation:
@@ -32,7 +33,7 @@ on:
 # Scoped to this stage AND feed, so the feeds never block each other but a run
 # never collides with itself mid-transaction.
 concurrency:
-  group: stage4-interruptible
+  group: stage4-awards
   cancel-in-progress: false
 
 jobs:
@@ -70,17 +71,17 @@ jobs:
             exit 1
           fi
 
-      - name: What will run for interruptible
-        run: python run.py --list --source interruptible
+      - name: What will run for awards
+        run: python run.py --list --source awards
 
       - name: Inspect (before)
         run: python run.py --inspect
 
-      - name: Run rec-del-pairing (interruptible)
+      - name: Run rec-del-pairing (awards)
         run: |
           INPUT="${{ github.event.inputs.transformation || 'all' }}"
           if [ "$INPUT" = "all" ]; then
-            python run.py --group rec_del_pairing/interruptible
+            python run.py --group rec_del_pairing/awards
           else
             python run.py --table "$INPUT"
           fi
@@ -95,6 +96,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: silver-parquet-stage4-interruptible-${{ github.run_id }}
+          name: silver-parquet-stage4-awards-${{ github.run_id }}
           path: parquet_output/
           if-no-files-found: warn

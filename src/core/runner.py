@@ -129,6 +129,8 @@ def _check_dependencies(conn, t: SilverTransformation) -> List[str]:
     Bronze -> Silver transformation but a later stage for transformations that
     build on one (see SilverTransformation.source_schema).
     """
+    if not t.sources_required:
+        return []   # transformation adapts to whichever sources exist
     missing = []
     for src in t.bronze_sources:
         if not table_exists(conn, t.source_schema, src):

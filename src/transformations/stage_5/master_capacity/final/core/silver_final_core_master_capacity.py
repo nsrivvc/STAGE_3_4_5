@@ -21,6 +21,7 @@ TWO THINGS TO SETTLE (see the note in ../../__init__.py):
 from __future__ import annotations
 
 from ..final_base import FinalMasterCapacityTransformation
+from ...models import CORE_COLUMNS
 from ......core.registry import register
 
 
@@ -29,6 +30,10 @@ class SilverFinalCoreMasterCapacity(FinalMasterCapacityTransformation):
     name = "silver_final_core_master_capacity"
     table_name = "final_core_master_capacity"
     grain = "core"
+
+    # Shared with the per-feed transformations so the UNION can never break
+    # on a column mismatch. Single definition lives in ../../models.py.
+    columns = CORE_COLUMNS
 
     # SPEC: one row per contract per feed. Revisit if a feed can restate a
     # contract (amendments may make this a versioned key).
@@ -40,32 +45,3 @@ class SilverFinalCoreMasterCapacity(FinalMasterCapacityTransformation):
     )
 
     # Mirrors public.final_core_master_capacity, snake_cased.
-    columns = [
-        ("ngh_contract_id", "TEXT"),
-        ("pipeline_duns", "TEXT"),
-        ("pipeline_name", "TEXT"),
-        ("contract_number", "TEXT"),
-        ("award_number", "TEXT"),
-        ("offer_number", "TEXT"),
-        ("bid_number", "TEXT"),
-        ("releaser_contract_number", "TEXT"),
-        ("posted_date", "TIMESTAMPTZ"),
-        ("begin_date", "TIMESTAMPTZ"),
-        ("end_date", "TIMESTAMPTZ"),
-        ("contract_quantity", "NUMERIC"),
-        ("rate_schedule", "TEXT"),
-        ("contract_holder", "TEXT"),
-        ("contract_holder_duns", "TEXT"),
-        ("releaser_name", "TEXT"),
-        ("releaser_duns", "TEXT"),
-        # term fields — these are what the rec-del term transform feeds
-        ("evergreen", "TEXT"),
-        ("notice_period_days", "INTEGER"),
-        ("calculated_end_date", "TIMESTAMPTZ"),
-        ("replacement_shipper_role_indicator", "TEXT"),
-        ("term_notes", "TEXT"),
-        ("contract_type", "TEXT"),
-        ("created_date", "TIMESTAMPTZ"),
-        ("update_date", "TIMESTAMPTZ"),
-        ("source", "TEXT"),
-    ]

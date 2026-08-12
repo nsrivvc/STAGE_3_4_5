@@ -15,6 +15,7 @@ this list, so nothing else needs touching.
 from __future__ import annotations
 
 from ..final_base import FinalMasterCapacityTransformation
+from ...models import LOCATIONS_COLUMNS
 from ......core.registry import register
 
 
@@ -23,6 +24,10 @@ class SilverFinalLocationsMasterCapacity(FinalMasterCapacityTransformation):
     name = "silver_final_locations_master_capacity"
     table_name = "final_locations_master_capacity"
     grain = "locations"
+
+    # Shared with the per-feed transformations so the UNION can never break
+    # on a column mismatch. Single definition lives in ../../models.py.
+    columns = LOCATIONS_COLUMNS
 
     # SPEC: one row per contract per location per feed. If a location can serve
     # both receipt and delivery on one contract, loc_purpose belongs in the key.
@@ -34,21 +39,3 @@ class SilverFinalLocationsMasterCapacity(FinalMasterCapacityTransformation):
     )
 
     # SPEC: placeholder model — no real target table exists yet.
-    columns = [
-        ("ngh_contract_id", "TEXT"),
-        ("pipeline_duns", "TEXT"),
-        ("pipeline_name", "TEXT"),
-        ("contract_number", "TEXT"),
-        ("loc_code", "TEXT"),
-        ("loc_name", "TEXT"),
-        ("loc_zone", "TEXT"),
-        ("loc_purpose", "TEXT"),          # REC | DEL
-        ("loc_quantity_type", "TEXT"),    # RPQ | DPQ
-        ("loc_quantity_dth", "NUMERIC"),
-        ("begin_date", "TIMESTAMPTZ"),
-        ("end_date", "TIMESTAMPTZ"),
-        ("posted_date", "TIMESTAMPTZ"),
-        ("created_date", "TIMESTAMPTZ"),
-        ("update_date", "TIMESTAMPTZ"),
-        ("source", "TEXT"),
-    ]

@@ -14,6 +14,7 @@ the DDL and the UNION both follow from this list.
 from __future__ import annotations
 
 from ..final_base import FinalMasterCapacityTransformation
+from ...models import RATES_COLUMNS
 from ......core.registry import register
 
 
@@ -22,6 +23,10 @@ class SilverFinalRatesMasterCapacity(FinalMasterCapacityTransformation):
     name = "silver_final_rates_master_capacity"
     table_name = "final_rates_master_capacity"
     grain = "rates"
+
+    # Shared with the per-feed transformations so the UNION can never break
+    # on a column mismatch. Single definition lives in ../../models.py.
+    columns = RATES_COLUMNS
 
     # SPEC: one row per contract per rate record per feed.
     natural_key = ("source_type", "ngh_contract_id", "rate_unique_id")
@@ -32,30 +37,3 @@ class SilverFinalRatesMasterCapacity(FinalMasterCapacityTransformation):
     )
 
     # SPEC: placeholder model — no real target table exists yet.
-    columns = [
-        ("ngh_contract_id", "TEXT"),
-        ("pipeline_duns", "TEXT"),
-        ("pipeline_name", "TEXT"),
-        ("contract_number", "TEXT"),
-        ("rate_unique_id", "TEXT"),
-        ("rate_id", "TEXT"),
-        ("rate_schedule", "TEXT"),
-        ("rate_form_type", "TEXT"),
-        ("rate_form_type_desc", "TEXT"),
-        ("receipt_loc_code", "TEXT"),
-        ("delivery_loc_code", "TEXT"),
-        ("rate_charged", "NUMERIC"),
-        ("max_tariff_rate", "NUMERIC"),
-        ("total_surcharge", "NUMERIC"),
-        ("all_in_rate", "NUMERIC"),
-        ("is_negotiated_rate", "BOOLEAN"),
-        ("is_market_based_rate", "BOOLEAN"),
-        ("season_start_date", "DATE"),
-        ("season_end_date", "DATE"),
-        ("begin_date", "TIMESTAMPTZ"),
-        ("end_date", "TIMESTAMPTZ"),
-        ("posted_date", "TIMESTAMPTZ"),
-        ("created_date", "TIMESTAMPTZ"),
-        ("update_date", "TIMESTAMPTZ"),
-        ("source", "TEXT"),
-    ]

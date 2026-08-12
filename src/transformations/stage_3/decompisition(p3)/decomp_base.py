@@ -111,7 +111,7 @@ def _select_expr(name: str) -> str:
 class LocationsDecomposition(SilverTransformation):
     # --- set these in each subclass ------------------------------------------
     feed: str = ""              # "firm" | "interruptible"
-    source_table: str = ""      # Bronze table to read
+    source_table: str = ""      # deduplication(p1) output table to read
     contract_id_col: str = ""   # firmid | interruptibleid
     qty_col: str = ""           # kqtyloc | itqtyloc
 
@@ -126,6 +126,16 @@ class LocationsDecomposition(SilverTransformation):
     @property
     def target_schema(self) -> str:
         """Stage 4 reads DECOMP_SCHEMA, so the output lands there, not in Silver."""
+        return self.decomp_schema
+
+    @property
+    def source_schema(self) -> str:
+        """Reads deduplication(p1) output, which also lives in DECOMP_SCHEMA.
+
+        Phase order is deduplication(p1) -> ammendments(p2) -> this. p2 has no
+        code yet, so this consumes p1 directly; when p2 lands, point
+        `source_table` at its output instead.
+        """
         return self.decomp_schema
 
     @property
@@ -179,6 +189,89 @@ class LocationsDecomposition(SilverTransformation):
         SELECT {sel}
         FROM latest
         ON CONFLICT ({self.contract_id_col}, uniqueid) DO UPDATE SET
+            {updates},
+            decomp_loaded_ts         = now();
+        """
+
+
+class GrainDecomposition(SilverTransformation):
+    """Generic decomposition for the core and rates grains.
+
+    Locations has an agreed PySpark schema and its own typed class above. Core
+    and rates have no such schema yet, so this projects the source's columns
+    straight through onto a keyed staging table -- the point being to produce one
+    stable, keyed table per grain that stage 4 and 5 can rely on, rather than to
+    retype the fields.
+
+    Sources differ by grain, which is what the phase order dictates:
+
+        core       <- ammendments(p2) output, so the contract history is already
+                      folded into one current row per contract
+        rates      <- deduplication(p1) output, since rates carry no amendment
+                      marker of their own
+
+    SPEC: when core/rates get an agreed schema like locations has, give them a
+    typed subclass of their own and retire this passthrough.
+    """
+
+    feed: str = ""
+    grain: str = ""             # "core" | "rates"
+    source_table: str = ""
+    key_cols_list: List[str] = []
+    columns: List[str] = []
+
+    def __init__(self) -> None:
+        for attr in ("feed", "grain", "source_table", "key_cols_list", "columns"):
+            if not getattr(self, attr):
+                raise ValueError(f"{type(self).__name__} must set `{attr}`.")
+        self.source = self.feed
+        self.bronze_sources = [self.source_table]
+        super().__init__()
+
+    @property
+    def source_schema(self) -> str:
+        return self.decomp_schema
+
+    @property
+    def target_schema(self) -> str:
+        return self.decomp_schema
+
+    def create_table_sql(self) -> str:
+        key = ", ".join(self.key_cols_list)
+        return f"""
+        CREATE SCHEMA IF NOT EXISTS {self.target_schema};
+
+        CREATE TABLE IF NOT EXISTS {self.target_schema}.{self.table_name} (
+            LIKE {self.source_schema}.{self.source_table},
+            decomp_loaded_ts         TIMESTAMPTZ DEFAULT now(),
+            CONSTRAINT uq_{self.table_name}
+                UNIQUE NULLS NOT DISTINCT ({key})
+        );
+        """
+
+    def transform_sql(self) -> str:
+        key = ", ".join(self.key_cols_list)
+        sep = ",\n            "
+        cols = sep.join(self.columns)
+        updatable = [c for c in self.columns if c not in self.key_cols_list]
+        updates = sep.join(f"{c:<26} = EXCLUDED.{c}" for c in updatable)
+        # Latest wins per key, so a re-run cannot hit the same target row twice.
+        return f"""
+        WITH latest AS (
+            SELECT * FROM (
+                SELECT s.*, row_number() OVER (
+                    PARTITION BY {key}
+                    ORDER BY ingestion_timestamp DESC, bronze_row_id DESC) AS _rn
+                FROM {self.source_schema}.{self.source_table} s
+            ) x WHERE _rn = 1
+        )
+        INSERT INTO {self.target_schema}.{self.table_name} AS tgt (
+            {cols}
+        )
+        SELECT
+            {cols}
+        FROM latest
+        ON CONFLICT ({key}) DO UPDATE SET
             {updates},
             decomp_loaded_ts         = now();
         """

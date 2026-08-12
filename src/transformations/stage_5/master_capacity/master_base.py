@@ -1,0 +1,132 @@
+"""
+master_base.py
+==============
+Shared base for the per-feed master capacity transformations. Not a
+transformation itself -- it registers nothing.
+
+WHAT IT DOES
+------------
+Maps one feed's stage-3 output onto the common master capacity model:
+
+    silver_staging.firm_core       ->  silver.firm_core_master_capacity
+    silver_staging.firm_locations  ->  silver.firm_locations_master_capacity
+    silver_staging.firm_rates      ->  silver.firm_rates_master_capacity
+
+...and the same for interruptible and awards. The three FINAL transformations
+then UNION every feed's table per grain into one consolidated table.
+
+The point of this layer is normalisation: each feed names the same concept
+differently (`kqtyk` vs `itqtyk`, `firmid` vs `interruptibleid`), and the master
+capacity model names it once. Subclasses supply `column_map` -- target column ->
+SQL expression over the source row -- and everything else is mechanical.
+
+A target column with no entry in `column_map` is emitted as NULL of the right
+type. That is deliberate: a feed that genuinely has no award number should say so
+by omission rather than by inventing a column, and it keeps every feed's table
+UNION-compatible without forcing fake values.
+
+WHERE THE COLUMNS COME FROM
+---------------------------
+`models.py`, shared with the finals, so the two can never drift apart.
+"""
+
+from __future__ import annotations
+
+from typing import Dict, List
+
+from .models import COLUMNS_BY_GRAIN, NATURAL_KEY_BY_GRAIN
+from ....core.base import SilverTransformation
+
+
+class MasterCapacityTransformation(SilverTransformation):
+    # --- set these in each subclass ------------------------------------------
+    feed: str = ""                    # "firm" | "interruptible" | "awards"
+    grain: str = ""                   # "core" | "locations" | "rates"
+    source_table: str = ""            # stage-3 output in DECOMP_SCHEMA
+    column_map: Dict[str, str] = {}   # target column -> SQL expression
+
+    def __init__(self) -> None:
+        for attr in ("feed", "grain", "source_table"):
+            if not getattr(self, attr):
+                raise ValueError(f"{type(self).__name__} must set `{attr}`.")
+        if self.grain not in COLUMNS_BY_GRAIN:
+            raise ValueError(f"{type(self).__name__}: unknown grain {self.grain!r}")
+        self.source = self.feed
+        self.bronze_sources = [self.source_table]
+        super().__init__()
+
+    @property
+    def source_schema(self) -> str:
+        """Stage 3 writes to DECOMP_SCHEMA; this reads it."""
+        return self.decomp_schema
+
+    @property
+    def columns(self):
+        return COLUMNS_BY_GRAIN[self.grain]
+
+    @property
+    def natural_key(self):
+        return NATURAL_KEY_BY_GRAIN[self.grain]
+
+    def _expr(self, name: str, sql_type: str) -> str:
+        """Source expression for a target column, or a typed NULL if unmapped."""
+        return self.column_map.get(name, f"NULL::{sql_type}")
+
+    # ------------------------------------------------------------------ DDL
+    def create_table_sql(self) -> str:
+        s = self.silver_schema
+        cols = ",\n            ".join(f"{n:<38} {t}" for n, t in self.columns)
+        key = ", ".join(self.natural_key)
+        return f"""
+        CREATE SCHEMA IF NOT EXISTS {s};
+
+        CREATE TABLE IF NOT EXISTS {s}.{self.table_name} (
+            {self.feed}_{self.grain}_id{'':<12} BIGSERIAL PRIMARY KEY,
+
+            {cols},
+
+            silver_loaded_ts                       TIMESTAMPTZ DEFAULT now(),
+
+            CONSTRAINT uq_{self.table_name}
+                UNIQUE NULLS NOT DISTINCT ({key})
+        );
+        """
+
+    # ------------------------------------------------------------ transform
+    def transform_sql(self) -> str:
+        s = self.silver_schema
+        sep = ",\n            "
+        names = [n for n, _ in self.columns]
+        select = sep.join(
+            f"{self._expr(n, t)} AS {n}" for n, t in self.columns)
+        insert = sep.join(names)
+        updatable = [n for n in names if n not in self.natural_key]
+        updates = sep.join(f"{n:<38} = EXCLUDED.{n}" for n in updatable)
+        key = ", ".join(self.natural_key)
+
+        # Latest wins per natural key, so a source holding more than one row per
+        # key cannot make the upsert touch the same target row twice.
+        return f"""
+        WITH mapped AS (
+            SELECT
+            {select}
+            FROM {self.source_schema}.{self.source_table}
+        ),
+        deduped AS (
+            SELECT * FROM (
+                SELECT m.*, row_number() OVER (
+                    PARTITION BY {key}
+                    ORDER BY update_date DESC NULLS LAST, posted_date DESC NULLS LAST) AS _rn
+                FROM mapped m
+            ) x WHERE _rn = 1
+        )
+        INSERT INTO {s}.{self.table_name} AS tgt (
+            {insert}
+        )
+        SELECT
+            {insert}
+        FROM deduped
+        ON CONFLICT ({key}) DO UPDATE SET
+            {updates},
+            silver_loaded_ts                       = now();
+        """

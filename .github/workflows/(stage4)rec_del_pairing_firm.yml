@@ -3,8 +3,7 @@ name: (stage4)rec-del-pairing [firm]
 # Pairs receipts to deliveries for the FIRM feed, from that feed's
 # locations table produced by the decomposition phase.
 #
-# PAIRING IS FIRM AND INTERRUPTIBLE ONLY -- awards and IOC have no
-# receipt/delivery paths to pair, so there are two of these, not four.
+# PAIRING COVERS FIRM, INTERRUPTIBLE AND AWARDS. IOC has no stage 4.
 #
 # ONE FEED PER FILE: this workflow handles the FIRM feed and nothing else, so it
 # runs, logs, fails and uploads its Parquet completely independently of the other
