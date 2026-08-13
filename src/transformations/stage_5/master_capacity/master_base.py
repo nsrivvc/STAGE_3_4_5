@@ -37,6 +37,14 @@ from typing import Dict, List
 from .models import COLUMNS_BY_GRAIN, NATURAL_KEY_BY_GRAIN
 from ....core.base import SilverTransformation
 
+#: Model columns that are SQL keywords ("index" is merely unreserved, "group"
+#: is fully reserved) -- every identifier position quotes them.
+KEYWORD_COLUMNS = {"index", "group"}
+
+
+def _q(name: str) -> str:
+    return f'"{name}"' if name in KEYWORD_COLUMNS else name
+
 
 class MasterCapacityTransformation(SilverTransformation):
     # --- set these in each subclass ------------------------------------------
@@ -75,8 +83,8 @@ class MasterCapacityTransformation(SilverTransformation):
     # ------------------------------------------------------------------ DDL
     def create_table_sql(self) -> str:
         s = self.silver_schema
-        cols = ",\n            ".join(f"{n:<38} {t}" for n, t in self.columns)
-        key = ", ".join(self.natural_key)
+        cols = ",\n            ".join(f"{_q(n):<38} {t}" for n, t in self.columns)
+        key = ", ".join(_q(k) for k in self.natural_key)
         return f"""
         CREATE SCHEMA IF NOT EXISTS {s};
 
@@ -98,11 +106,11 @@ class MasterCapacityTransformation(SilverTransformation):
         sep = ",\n            "
         names = [n for n, _ in self.columns]
         select = sep.join(
-            f"{self._expr(n, t)} AS {n}" for n, t in self.columns)
-        insert = sep.join(names)
+            f"{self._expr(n, t)} AS {_q(n)}" for n, t in self.columns)
+        insert = sep.join(_q(n) for n in names)
         updatable = [n for n in names if n not in self.natural_key]
-        updates = sep.join(f"{n:<38} = EXCLUDED.{n}" for n in updatable)
-        key = ", ".join(self.natural_key)
+        updates = sep.join(f"{_q(n):<38} = EXCLUDED.{_q(n)}" for n in updatable)
+        key = ", ".join(_q(k) for k in self.natural_key)
 
         # Latest wins per natural key, so a source holding more than one row per
         # key cannot make the upsert touch the same target row twice.

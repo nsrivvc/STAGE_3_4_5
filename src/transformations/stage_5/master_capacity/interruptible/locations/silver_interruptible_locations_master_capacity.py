@@ -27,23 +27,27 @@ class SilverInterruptibleLocationsMasterCapacity(MasterCapacityTransformation):
     source_table = "interruptible_locations"
 
 
-    # SPEC: `ngh_contract_id` is the feed's CONTRACT key (interruptibleid), not the row's
-    # own `id`. In the locations and rates tables `id` identifies the location or
-    # rate record and repeats across contracts -- using it collapsed 4,467
-    # locations into 112. The contract key is also what ties core, locations and
-    # rates together, which is the point of a shared master capacity model.
+    # Mirror of the firm map (see ../../firm/locations/), per the agreed
+    # Locations sheet's gTRAN IT column: contract key interruptibleid,
+    # quantity itqtyloc; everything else shares the firm feed's names.
     column_map = {
         "ngh_contract_id": "interruptibleid",
-        "pipeline_duns": "tspduns",
-        "pipeline_name": "tspname",
-        "loc_code": "loc",
-        "loc_name": "locname",
-        "loc_zone": "loczn",
-        "loc_purpose": "locpurp",
-        "loc_quantity_type": "locqti",
-        "begin_date": "NULLIF(kentbegdatetime, '')::TIMESTAMPTZ",
+        "location": "loc",
+        "location_name": "locname",
+        "zone": "loczn",
+        "location_qti": "locqti",
+        "location_purpose_code": "locpurpdesc",
+        "capacity_type": "captypename",
+        "quantity": "NULLIF(itqtyloc, '')::NUMERIC",
+        "beg_date": "NULLIF(kentbegdatetime, '')::TIMESTAMPTZ",
         "end_date": "NULLIF(kentenddatetime, '')::TIMESTAMPTZ",
+        "season_beg_date": "NULLIF(seasnlst, '')::TIMESTAMPTZ",
+        "season_end_date": "NULLIF(seasnlend, '')::TIMESTAMPTZ",
+        "transaction_term_begin_datetime": "NULLIF(transactiontermbegindatetime, '')::TIMESTAMPTZ",
+        "transaction_term_end_datetime": "NULLIF(transactiontermenddatetime, '')::TIMESTAMPTZ",
+        "segment": "segment",
+        "index": '"index"',
         "posted_date": "NULLIF(posteddatetime, '')::TIMESTAMPTZ",
-        "created_date": "NULLIF(createddatetime, '')::TIMESTAMPTZ",
-        "source": "source_system",
+        "update_date": "ingestion_timestamp",
+        "source": "'gTRAN IT'",
     }

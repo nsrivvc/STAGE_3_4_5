@@ -27,23 +27,29 @@ class SilverFirmLocationsMasterCapacity(MasterCapacityTransformation):
     source_table = "firm_locations"
 
 
-    # SPEC: `ngh_contract_id` is the feed's CONTRACT key (firmid), not the row's
-    # own `id`. In the locations and rates tables `id` identifies the location or
-    # rate record and repeats across contracts -- using it collapsed 4,467
-    # locations into 112. The contract key is also what ties core, locations and
-    # rates together, which is the point of a shared master capacity model.
+    # Mappings follow the agreed Locations sheet (gTRAN FIRM column):
+    # Location <- Loc, Location Purpose Code <- LocPurpDesc, Capacity Type <-
+    # CapTypeName, Quantity <- KQtyLoc, and so on. `ngh_contract_id` is the
+    # contract key (firmid) tying this grain back to core; `group` has no firm
+    # source and stays NULL.
     column_map = {
         "ngh_contract_id": "firmid",
-        "pipeline_duns": "tspduns",
-        "pipeline_name": "tspname",
-        "loc_code": "loc",
-        "loc_name": "locname",
-        "loc_zone": "loczn",
-        "loc_purpose": "locpurp",
-        "loc_quantity_type": "locqti",
-        "begin_date": "NULLIF(kentbegdatetime, '')::TIMESTAMPTZ",
+        "location": "loc",
+        "location_name": "locname",
+        "zone": "loczn",
+        "location_qti": "locqti",
+        "location_purpose_code": "locpurpdesc",
+        "capacity_type": "captypename",
+        "quantity": "NULLIF(kqtyloc, '')::NUMERIC",
+        "beg_date": "NULLIF(kentbegdatetime, '')::TIMESTAMPTZ",
         "end_date": "NULLIF(kentenddatetime, '')::TIMESTAMPTZ",
+        "season_beg_date": "NULLIF(seasnlst, '')::TIMESTAMPTZ",
+        "season_end_date": "NULLIF(seasnlend, '')::TIMESTAMPTZ",
+        "transaction_term_begin_datetime": "NULLIF(transactiontermbegindatetime, '')::TIMESTAMPTZ",
+        "transaction_term_end_datetime": "NULLIF(transactiontermenddatetime, '')::TIMESTAMPTZ",
+        "segment": "segment",
+        "index": '"index"',
         "posted_date": "NULLIF(posteddatetime, '')::TIMESTAMPTZ",
-        "created_date": "NULLIF(createddatetime, '')::TIMESTAMPTZ",
-        "source": "source_system",
+        "update_date": "ingestion_timestamp",
+        "source": "'gTRAN FIRM'",
     }

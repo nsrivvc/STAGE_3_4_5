@@ -55,6 +55,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Tuple
 
+from ..master_base import _q
 from .....core.base import SilverTransformation
 from .....db.connection import table_exists
 from .....logging_config import get_logger
@@ -119,7 +120,7 @@ class FinalMasterCapacityTransformation(SilverTransformation):
         so it selects them straight through. When a feed differs, override this
         and do the renaming/casting here rather than in the target DDL.
         """
-        cols = ",\n                   ".join(name for name, _ in self.columns)
+        cols = ",\n                   ".join(_q(name) for name, _ in self.columns)
         return f"""
             SELECT '{feed}' AS source_type,
                    {cols}
@@ -129,8 +130,8 @@ class FinalMasterCapacityTransformation(SilverTransformation):
     # ------------------------------------------------------------------ DDL
     def create_table_sql(self) -> str:
         s = self.silver_schema
-        cols = ",\n            ".join(f"{name:<34} {sql_type}" for name, sql_type in self.columns)
-        key = ", ".join(self.natural_key)
+        cols = ",\n            ".join(f"{_q(name):<34} {sql_type}" for name, sql_type in self.columns)
+        key = ", ".join(_q(k) for k in self.natural_key)
         return f"""
         CREATE SCHEMA IF NOT EXISTS {s};
 
@@ -156,7 +157,7 @@ class FinalMasterCapacityTransformation(SilverTransformation):
     def transform_sql(self) -> str:
         s = self.silver_schema
         col_names = [name for name, _ in self.columns]
-        insert_cols = ",\n            ".join(["source_type", *col_names])
+        insert_cols = ",\n            ".join(["source_type", *(_q(c) for c in col_names)])
 
         # Only the feeds detected at run time by run(). Falls back to every known
         # feed so `--show-sql` still renders something meaningful offline.
@@ -171,10 +172,10 @@ class FinalMasterCapacityTransformation(SilverTransformation):
         # inside f-string expressions before Python 3.12, and CI pins 3.11.
         sep = ",\n            "
         updatable = [c for c in col_names if c not in self.natural_key]
-        updates = sep.join(f"{c:<34} = EXCLUDED.{c}" for c in updatable)
+        updates = sep.join(f"{_q(c):<34} = EXCLUDED.{_q(c)}" for c in updatable)
         updates = updates + sep if updates else ""
-        select_cols = sep.join(col_names)
-        key_cols = ", ".join(self.natural_key)
+        select_cols = sep.join(_q(c) for c in col_names)
+        key_cols = ", ".join(_q(k) for k in self.natural_key)
 
         return f"""
         WITH consolidated AS (

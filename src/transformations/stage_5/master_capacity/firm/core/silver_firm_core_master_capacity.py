@@ -45,9 +45,13 @@ class SilverFirmCoreMasterCapacity(MasterCapacityTransformation):
         "contract_holder": "kholdername",
         "contract_holder_duns": "kholder",
         "evergreen": "kroll",
+        # Per the Contracts mapping sheet this is the fixed far-future
+        # placeholder for the gTRAN feeds.
+        "calculated_end_date": "'2999-12-31 00:00:00+00'::TIMESTAMPTZ",
         "term_notes": "termsnotes",
         "contract_type": "'FIRM'",
         "created_date": "NULLIF(createddatetime, '')::TIMESTAMPTZ",
         "update_date": "updated_ts",
-        "source": "source_system",
+        # The sheet's Source row names the feed literally.
+        "source": "'gTRAN FIRM'",
     }

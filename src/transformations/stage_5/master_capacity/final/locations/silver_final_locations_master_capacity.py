@@ -4,12 +4,9 @@ silver_final_locations_master_capacity.py
 FINAL Locations — Master Capacity. Consolidates all four feeds' location master
 capacity tables into one.
 
-NO EXISTING TARGET TO MIRROR: unlike the core grain, there is no
-`final_locations_master_capacity` table in the database yet, so the column set
-below is a SPEC placeholder built from the location fields this pipeline already
-handles (bronze.gtran_loc and the stage-4 rec-del pairing output). Replace it
-with the real model when it's settled — the DDL and the UNION both follow from
-this list, so nothing else needs touching.
+The column set follows the agreed Locations mapping sheet and lives in
+../../models.py, shared with the per-feed transformations so the UNION can
+never break on a column mismatch.
 """
 
 from __future__ import annotations
@@ -29,13 +26,9 @@ class SilverFinalLocationsMasterCapacity(FinalMasterCapacityTransformation):
     # on a column mismatch. Single definition lives in ../../models.py.
     columns = LOCATIONS_COLUMNS
 
-    # SPEC: one row per contract per location per feed. If a location can serve
-    # both receipt and delivery on one contract, loc_purpose belongs in the key.
-    natural_key = ("source_type", "ngh_contract_id", "loc_code")
+    # One row per contract/location/purpose per feed -- a location can serve
+    # both receipt and delivery on one contract, so purpose is in the key,
+    # mirroring the per-feed natural key in models.py.
+    natural_key = ("source_type", "ngh_contract_id", "location", "location_purpose_code")
 
-    dedupe_note = (
-        "one row per contract/location per feed; add loc_purpose to the key if "
-        "a location can be both receipt and delivery on the same contract"
-    )
-
-    # SPEC: placeholder model — no real target table exists yet.
+    dedupe_note = "one row per contract/location/purpose per feed"
