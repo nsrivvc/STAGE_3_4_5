@@ -342,7 +342,7 @@ Add this as the last step of `bronze_ingest_firm.yml` in the ingestion repo:
         env:
           GH_TOKEN: ${{ secrets.SILVER_REPO_TOKEN }}
         run: |
-          gh api repos/nsrivvc/bronze_to_silver_conversion/dispatches \
+          gh api repos/nsrivvc/STAGE_3_4_5/dispatches \
             -f event_type=bronze-firm-loaded \
             -f 'client_payload[ingest_run_id]=${{ github.run_id }}'
 ```
@@ -351,9 +351,21 @@ The FINAL tables always run at the end of the chain: they consolidate whatever
 feeds currently sit in Silver, so a firm-only run rebuilds them from firm's
 fresh rows plus whatever the other feeds last left behind.
 
-The same pattern extends to the other feeds — add a matching
-`repository_dispatch` type to each orchestrator (`bronze-interruptible-loaded`
-and so on) and a dispatch step to that feed's ingestion workflow.
+The other feeds' orchestrators listen the same way — `interruptible(stage3_4_5).yml`
+accepts `bronze-interruptible-loaded` and `awards(stage3_4_5).yml` accepts
+`bronze-awards-loaded`. Each needs the matching dispatch step at the end of its
+feed's ingestion workflow, e.g. for `bronze_ingest_interruptibles.yml`:
+
+```yaml
+      - name: Trigger Silver interruptible pipeline
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.SILVER_REPO_TOKEN }}
+        run: |
+          gh api repos/nsrivvc/STAGE_3_4_5/dispatches \
+            -f event_type=bronze-interruptible-loaded \
+            -f 'client_payload[ingest_run_id]=${{ github.run_id }}'
+```
 
 **No, the database itself cannot be the trigger.** Neon emits no webhook on
 data change, and `LISTEN`/`NOTIFY` needs a process holding a connection open,

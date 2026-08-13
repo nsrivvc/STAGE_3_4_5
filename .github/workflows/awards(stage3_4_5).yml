@@ -14,8 +14,16 @@ name: awards (stage 3-4-5)
 # whatever feeds currently sit in Silver: after an awards-only run they contain
 # awards's fresh rows plus whatever the other feeds last left behind, and once
 # other feeds have landed they fold into the same master tables.
+#
+# TRIGGERED FROM THE INGESTION REPO
+# ---------------------------------
+# The ingestion repo fires a repository_dispatch of type bronze-awards-loaded
+# at the end of its awards Bronze load, exactly like the firm orchestrator's
+# bronze-firm-loaded. See the README section "Triggering from the ingestion repo".
 on:
   workflow_dispatch:
+  repository_dispatch:
+    types: [bronze-awards-loaded]
 
 concurrency:
   group: awards-end-to-end
