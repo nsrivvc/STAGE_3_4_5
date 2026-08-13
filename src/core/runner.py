@@ -10,7 +10,9 @@ into a non-zero exit code, which schedulers use to flag failed jobs).
 
 A transformation is skipped entirely — no CREATE TABLE, no INSERT/UPDATE — once
 its Silver table already exists. The table is only ever populated on the run
-that creates it; rerunning after that is a deliberate no-op.
+that creates it; rerunning after that is a deliberate no-op. Pass reload=True
+(CLI: --reload) to drop and rebuild instead — the stage workflows all do, so
+every scheduled or ingest-triggered run refreshes from current Bronze.
 """
 
 from __future__ import annotations

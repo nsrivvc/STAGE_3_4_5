@@ -9,7 +9,7 @@ Reads the deduplication(p1) output `interruptible_locations_dedup`, so only new 
 rows reach this phase. When ammendments(p2) gains code, point `source_table`
 at its output instead; nothing else changes.
 
-Note gtran_it_loc is empty today, so this reports 0 rows until the IT feed lands.
+Note bronze.gtran_it is empty today, so this reports 0 rows until the IT feed lands.
 """
 
 from __future__ import annotations

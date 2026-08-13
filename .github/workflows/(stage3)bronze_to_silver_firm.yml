@@ -82,12 +82,12 @@ jobs:
         run: |
           INPUT="${{ github.event.inputs.transformation || 'all' }}"
           if [ "$INPUT" != "all" ]; then
-            python run.py --table "$INPUT"
+            python run.py --table "$INPUT" --reload
             exit 0
           fi
           for PHASE in "deduplication(p1)" "ammendments(p2)" "decompisition(p3)" "standardization(p4)"; do
             echo "::group::$PHASE"
-            python run.py --group "$PHASE" --source firm
+            python run.py --group "$PHASE" --source firm --reload
             echo "::endgroup::"
           done
 

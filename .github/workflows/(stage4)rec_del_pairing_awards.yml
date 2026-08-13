@@ -81,9 +81,9 @@ jobs:
         run: |
           INPUT="${{ github.event.inputs.transformation || 'all' }}"
           if [ "$INPUT" = "all" ]; then
-            python run.py --group rec_del_pairing/awards
+            python run.py --group rec_del_pairing/awards --reload
           else
-            python run.py --table "$INPUT"
+            python run.py --table "$INPUT" --reload
           fi
 
       - name: Inspect (after)

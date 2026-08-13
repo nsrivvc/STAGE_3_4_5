@@ -18,7 +18,8 @@ SilverTransformation and implements three things:
 
 NOTE: the runner skips a transformation entirely (no create, no insert/update) once
 `silver_schema.table_name` already exists — see runner._silver_table_exists(). The
-table is only ever populated on the run that creates it.
+table is only ever populated on the run that creates it, unless the run passes
+--reload (as the stage workflows do), which drops and rebuilds it.
 
 The methods return plain SQL strings, so this module deliberately does NOT import
 SQLAlchemy. The runner passes a live Connection to run().

@@ -45,6 +45,8 @@ load-once check and `--inspect` look in the right place.
 
 from __future__ import annotations
 
+from typing import List, Tuple
+
 from ....core.base import SilverTransformation
 
 
@@ -88,5 +90,130 @@ class Deduplication(SilverTransformation):
         -- that proceed to p2 onwards.
         INSERT INTO {self.target_schema}.{self.table_name}
         SELECT * FROM {self.source_schema}.{self.source_table}
+        ON CONFLICT (hash_key) DO NOTHING
+        """
+
+
+#: Audit columns stamped onto every exploded element row. All but two are
+#: copied from the parent contract row; the exceptions are `hash_key` (the
+#: ELEMENT's own content fingerprint -- see NestedArrayDeduplication) and
+#: `raw_payload` (the element's own JSON object, not the whole contract's).
+ELEMENT_AUDIT_COLUMNS: List[Tuple[str, str]] = [
+    ("raw_record_id", "TEXT"),
+    ("hash_key", "TEXT"),
+    ("pipeline_run_id", "TEXT"),
+    ("source_system", "TEXT"),
+    ("source_api", "TEXT"),
+    ("source_file_name", "TEXT"),
+    ("ingestion_timestamp", "TIMESTAMPTZ"),
+    ("updated_ts", "TIMESTAMPTZ"),
+    ("ingestion_status", "TEXT"),
+    ("raw_payload", "JSONB"),
+]
+
+#: `index` (from the locations' "Index" key) is a SQL keyword.
+_NEEDS_QUOTING = {"index"}
+
+
+def _q(name: str) -> str:
+    return f'"{name}"' if name in _NEEDS_QUOTING else name
+
+
+class NestedArrayDeduplication(SilverTransformation):
+    """Entry point for the locations / rates grains: explode-then-dedupe.
+
+    Ingestion lands each feed as ONE raw Bronze table (gtran_firm, gtran_it)
+    whose rows carry the contract header plus nested `locations` and `rates`
+    JSON arrays -- there are no separate gtran_loc / gtran_rates tables. So the
+    nested grains enter the pipeline here: one output row per array element,
+    exploded straight out of the raw table's `raw_payload`.
+
+    COLUMNS COME FROM THE JSON. `element_keys` lists one element's keys
+    verbatim (CamelCase, as they appear in the payload); each becomes a TEXT
+    column named key.lower(), which is exactly the naming decompisition(p3)
+    expects. A key absent from some element yields NULL rather than failing.
+    `parent_columns` carries the contract-row fields that do not exist inside
+    an element but that downstream phases need (the contract id,
+    posteddatetime, and for rates tspduns/tspname).
+
+    DEDUPE RULE is the same as Deduplication, applied per element: `hash_key`
+    here is md5 of the element's canonical jsonb text, so an element already
+    recorded by an earlier fetch is dropped by ON CONFLICT DO NOTHING, and an
+    element changed in any field hashes differently and passes through.
+    (jsonb canonicalises key order, so the hash is stable across re-serialisations.)
+    """
+
+    # --- set these in each subclass ------------------------------------------
+    feed: str = ""              # "firm" | "interruptible"
+    source_table: str = ""      # raw Bronze feed table holding the nested JSON
+    section: str = ""           # top-level raw_payload key: "locations" | "rates"
+    parent_columns: List[str] = []   # contract-row columns copied onto each element
+    element_keys: List[str] = []     # JSON keys of one element; column = key.lower()
+
+    def __init__(self) -> None:
+        for attr in ("feed", "source_table", "section", "parent_columns", "element_keys"):
+            if not getattr(self, attr):
+                raise ValueError(f"{type(self).__name__} must set `{attr}`.")
+        self.source = self.feed
+        self.bronze_sources = [self.source_table]
+        super().__init__()
+
+    @property
+    def target_schema(self) -> str:
+        """Staging, not Silver -- p2/p3/p4 and stage 4 all read from here."""
+        return self.decomp_schema
+
+    @property
+    def columns(self) -> List[Tuple[str, str]]:
+        """(name, type) for every target column, in insert order."""
+        return (
+            [("bronze_row_id", "BIGINT")]
+            + [(c, "TEXT") for c in self.parent_columns]
+            + [(k.lower(), "TEXT") for k in self.element_keys]
+            + ELEMENT_AUDIT_COLUMNS
+        )
+
+    # ------------------------------------------------------------------ DDL
+    def create_table_sql(self) -> str:
+        cols = ",\n            ".join(f"{_q(n):<24} {t}" for n, t in self.columns)
+        return f"""
+        CREATE SCHEMA IF NOT EXISTS {self.target_schema};
+
+        CREATE TABLE IF NOT EXISTS {self.target_schema}.{self.table_name} (
+            {cols},
+            CONSTRAINT uq_{self.table_name}_hash UNIQUE (hash_key)
+        );
+        """
+
+    # ------------------------------------------------------------ transform
+    def transform_sql(self) -> str:
+        select_parts = (
+            ["s.bronze_row_id"]
+            + [f"s.{c}" for c in self.parent_columns]
+            + [f"el ->> '{k}'" for k in self.element_keys]
+            + [
+                "s.raw_record_id",
+                "md5(el::text)",        # element-level content fingerprint
+                "s.pipeline_run_id",
+                "s.source_system",
+                "s.source_api",
+                "s.source_file_name",
+                "s.ingestion_timestamp",
+                "s.updated_ts",
+                "s.ingestion_status",
+                "el",                   # the element's own JSON, not the contract's
+            ]
+        )
+        ins = ",\n            ".join(_q(n) for n, _ in self.columns)
+        sel = ",\n            ".join(select_parts)
+        return f"""
+        INSERT INTO {self.target_schema}.{self.table_name} (
+            {ins}
+        )
+        SELECT
+            {sel}
+        FROM {self.source_schema}.{self.source_table} s
+        CROSS JOIN LATERAL jsonb_array_elements(s.raw_payload -> '{self.section}') AS el
+        WHERE jsonb_typeof(s.raw_payload -> '{self.section}') = 'array'
         ON CONFLICT (hash_key) DO NOTHING
         """

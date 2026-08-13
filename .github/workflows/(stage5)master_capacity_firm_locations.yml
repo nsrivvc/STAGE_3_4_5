@@ -75,9 +75,9 @@ jobs:
         run: |
           INPUT="${{ github.event.inputs.transformation || 'all' }}"
           if [ "$INPUT" = "all" ]; then
-            python run.py --group master_capacity/firm/locations
+            python run.py --group master_capacity/firm/locations --reload
           else
-            python run.py --table "$INPUT"
+            python run.py --table "$INPUT" --reload
           fi
 
       - name: Inspect (after)

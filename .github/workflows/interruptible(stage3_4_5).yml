@@ -8,22 +8,14 @@ name: interruptible (stage 3-4-5)
 # what each stage does. Editing a stage's own .yml changes it here too.
 #
 #
-# READ THIS BEFORE TRUSTING THE FINAL TABLES
-# ------------------------------------------
-# The FINAL tables consolidate EVERY feed, not just interruptible. Running them from a
-# interruptible-only chain rebuilds them from interruptible's fresh rows plus whatever the other
-# feeds last left behind. That is correct only if the other feeds are already
-# up to date. If they are not, run their stages first, or dispatch this with
-# run_final = false and run the FINAL workflows separately once every feed has
-# landed.
+# ABOUT THE FINAL TABLES
+# ----------------------
+# The FINAL tables always run at the end of this chain. They consolidate
+# whatever feeds currently sit in Silver: after an interruptible-only run they
+# contain interruptible's fresh rows plus whatever the other feeds last left
+# behind, and once other feeds have landed they fold into the same master tables.
 on:
   workflow_dispatch:
-    inputs:
-      run_final:
-        description: "Also rebuild the cross-feed FINAL tables (see note above)"
-        required: true
-        type: boolean
-        default: true
 
 concurrency:
   group: interruptible-end-to-end
@@ -66,20 +58,20 @@ jobs:
   final_core:
     name: final - core
     needs: [stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && inputs.run_final }}
+    if: ${{ !cancelled() }}
     uses: "./.github/workflows/(stage5)master_capacity_final_core.yml"
     secrets: inherit
 
   final_locations:
     name: final - locations
     needs: [stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && inputs.run_final }}
+    if: ${{ !cancelled() }}
     uses: "./.github/workflows/(stage5)master_capacity_final_locations.yml"
     secrets: inherit
 
   final_rates:
     name: final - rates
     needs: [stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && inputs.run_final }}
+    if: ${{ !cancelled() }}
     uses: "./.github/workflows/(stage5)master_capacity_final_rates.yml"
     secrets: inherit

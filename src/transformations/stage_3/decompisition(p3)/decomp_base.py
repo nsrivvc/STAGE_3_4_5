@@ -9,15 +9,19 @@ WHAT IT DOES
 Projects a feed's Bronze locations table into a typed staging table in
 DECOMP_SCHEMA, one row per location, matching the agreed schema:
 
-    index LongType, segment, <contract_id>, uniqueid, pk, <qty>, seasnlst,
-    seasnlend, uniquekey, id, posteddatetime, kentbegdatetime, kentenddatetime,
-    loc, locname, locpurp, locpurpdesc, loczn, locqti, locqtidesc, tspduns,
-    tspname, createddatetime
+    index LongType, transactiontermbegindatetime, transactiontermenddatetime,
+    segment, <contract_id>, uniqueid, pk, <qty>, seasnlst, seasnlend,
+    uniquekey, id, posteddatetime, kentbegdatetime, kentenddatetime,
+    captypename, loc, locname, locpurp, locpurpdesc, loczn, locqti,
+    locqtidesc, tspduns, tspname, createddatetime
 
 Two feeds differ only in two column names, so they are class attributes:
 
-    firm           firmid          / kqtyloc   <- bronze.gtran_loc
-    interruptible  interruptibleid / itqtyloc  <- bronze.gtran_it_loc
+    firm           firmid          / kqtyloc   <- firm_locations_dedup
+    interruptible  interruptibleid / itqtyloc  <- interruptible_locations_dedup
+
+(Both dedup tables are exploded out of the raw feed table's nested `locations`
+JSON by deduplication(p1) -- there is no separate Bronze locations table.)
 
 WHY IT WRITES OUTSIDE THE SILVER SCHEMA
 ---------------------------------------
@@ -38,9 +42,10 @@ TWO DELIBERATE DEPARTURES FROM THE PYSPARK SCHEMA
 
 DEDUPE IS NOT OPTIONAL
 ----------------------
-bronze.gtran_loc holds 4,470 rows over 4,467 distinct (contract, uniqueid)
-pairs -- re-ingested rows. Without latest-wins dedupe the upsert would touch the
-same target row twice in one statement, which Postgres rejects outright.
+The p1 output accumulates one row per distinct element content ever seen, so
+the same (contract, uniqueid) pair can appear under several content versions.
+Without latest-wins dedupe the upsert would touch the same target row twice in
+one statement, which Postgres rejects outright.
 """
 
 from __future__ import annotations
@@ -53,6 +58,8 @@ from ....core.base import SilverTransformation
 #: `{qty}` are substituted per feed. Everything is TEXT in Bronze except index.
 LOCATION_COLUMNS: List[Tuple[str, str]] = [
     ("index", "BIGINT"),
+    ("transactiontermbegindatetime", "TEXT"),
+    ("transactiontermenddatetime", "TEXT"),
     ("segment", "TEXT"),
     ("{id}", "TEXT"),
     ("uniqueid", "TEXT"),
@@ -65,6 +72,7 @@ LOCATION_COLUMNS: List[Tuple[str, str]] = [
     ("posteddatetime", "TEXT"),
     ("kentbegdatetime", "TEXT"),
     ("kentenddatetime", "TEXT"),
+    ("captypename", "TEXT"),
     ("loc", "TEXT"),
     ("locname", "TEXT"),
     ("locpurp", "TEXT"),
@@ -94,8 +102,14 @@ _NEEDS_QUOTING = {"index"}
 #: explicit cast on the way in. Everything is TEXT in Bronze; `index` is
 #: LongType in the agreed schema, hence BIGINT here. Empty strings become NULL
 #: rather than failing the cast.
+#:
+#: The transaction term columns are renames: the agreed schema exposes the
+#: contract's kbegdatetime / kenddatetime (carried onto every exploded location
+#: row by deduplication(p1)) under these names.
 SELECT_OVERRIDES = {
     "index": "NULLIF(\"index\", '')::BIGINT",
+    "transactiontermbegindatetime": "kbegdatetime",
+    "transactiontermenddatetime": "kenddatetime",
 }
 
 

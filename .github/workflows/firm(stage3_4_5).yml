@@ -21,22 +21,14 @@ name: firm (stage 3-4-5)
 # job's default GITHUB_TOKEN is scoped to its own repository and cannot dispatch
 # across repos. See the README section "Triggering from the ingestion repo".
 #
-# READ THIS BEFORE TRUSTING THE FINAL TABLES
-# ------------------------------------------
-# The FINAL tables consolidate EVERY feed, not just firm. Running them from a
-# firm-only chain rebuilds them from firm's fresh rows plus whatever the other
-# feeds last left behind. That is why an ingestion-triggered run defaults to
-# NOT rebuilding them: a firm ingest says nothing about the other feeds. Send
-# client_payload.run_final = true to override, or run the FINAL workflows
-# separately once every feed has landed.
+# ABOUT THE FINAL TABLES
+# ----------------------
+# The FINAL tables always run at the end of this chain. They consolidate
+# whatever feeds currently sit in Silver: after a firm-only run they contain
+# firm's fresh rows plus whatever the other feeds last left behind, and once
+# other feeds have landed they fold into the same master tables.
 on:
   workflow_dispatch:
-    inputs:
-      run_final:
-        description: "Also rebuild the cross-feed FINAL tables (see note above)"
-        required: true
-        type: boolean
-        default: true
   repository_dispatch:
     types: [bronze-firm-loaded]
 
@@ -47,26 +39,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Resolves run_final across both triggers: a manual dispatch has `inputs`, a
-  # repository_dispatch does not, and reading a missing input yields empty --
-  # which would silently skip the finals with no explanation.
-  plan:
-    runs-on: ubuntu-latest
-    outputs:
-      run_final: ${{ steps.pick.outputs.run_final }}
-    steps:
-      - id: pick
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VALUE="${{ inputs.run_final }}"
-          else
-            # Ingestion-triggered: default OFF, since one feed landing says
-            # nothing about the freshness of the other four.
-            VALUE="${{ github.event.client_payload.run_final || false }}"
-          fi
-          echo "run_final=$VALUE" >> "$GITHUB_OUTPUT"
-          echo "trigger=${{ github.event_name }}  run_final=$VALUE"
-
   stage3:
     name: stage 3 - bronze to silver
     uses: "./.github/workflows/(stage3)bronze_to_silver_firm.yml"
@@ -101,21 +73,21 @@ jobs:
   # others consolidate, matching the standalone FINAL workflows.
   final_core:
     name: final - core
-    needs: [plan, stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && needs.plan.outputs.run_final == 'true' }}
+    needs: [stage5_core, stage5_locations, stage5_rates]
+    if: ${{ !cancelled() }}
     uses: "./.github/workflows/(stage5)master_capacity_final_core.yml"
     secrets: inherit
 
   final_locations:
     name: final - locations
-    needs: [plan, stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && needs.plan.outputs.run_final == 'true' }}
+    needs: [stage5_core, stage5_locations, stage5_rates]
+    if: ${{ !cancelled() }}
     uses: "./.github/workflows/(stage5)master_capacity_final_locations.yml"
     secrets: inherit
 
   final_rates:
     name: final - rates
-    needs: [plan, stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && needs.plan.outputs.run_final == 'true' }}
+    needs: [stage5_core, stage5_locations, stage5_rates]
+    if: ${{ !cancelled() }}
     uses: "./.github/workflows/(stage5)master_capacity_final_rates.yml"
     secrets: inherit

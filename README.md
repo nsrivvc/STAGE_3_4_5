@@ -344,13 +344,12 @@ Add this as the last step of `bronze_ingest_firm.yml` in the ingestion repo:
         run: |
           gh api repos/nsrivvc/bronze_to_silver_conversion/dispatches \
             -f event_type=bronze-firm-loaded \
-            -f 'client_payload[ingest_run_id]=${{ github.run_id }}' \
-            -F 'client_payload[run_final]=false'
+            -f 'client_payload[ingest_run_id]=${{ github.run_id }}'
 ```
 
-`run_final=false` is deliberate: a firm ingest says nothing about whether the
-other feeds are current, and the FINAL tables consolidate all of them. Send
-`true` only when every feed is known fresh.
+The FINAL tables always run at the end of the chain: they consolidate whatever
+feeds currently sit in Silver, so a firm-only run rebuilds them from firm's
+fresh rows plus whatever the other feeds last left behind.
 
 The same pattern extends to the other feeds — add a matching
 `repository_dispatch` type to each orchestrator (`bronze-interruptible-loaded`
