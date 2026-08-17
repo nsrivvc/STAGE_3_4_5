@@ -10,7 +10,7 @@ name: bronze-ingest
 #
 # Each per-source workflow can also be dispatched on its own from the Actions
 # tab; this file just fans out to all of them at once. Stage 1-2 code lives in
-# the ingestion/ subfolder of this repo.
+# the src/transformations/stage_1_2(ingestion)/ subproject of this repo.
 #
 # The Bronze DDL is applied once, before the fan-out, so the four parallel
 # ingests never race each other creating tables — their own --create-tables
@@ -24,7 +24,7 @@ on:
 # this by design.
 defaults:
   run:
-    working-directory: ingestion
+    working-directory: src/transformations/stage_1_2(ingestion)
 
 jobs:
   ensure-schema:

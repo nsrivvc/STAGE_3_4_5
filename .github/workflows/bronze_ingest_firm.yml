@@ -1,7 +1,7 @@
 name: bronze-ingest-firm
 
 # JSON Ingestion -> Bronze for the FIRM transactional-reporting feed.
-# Stage 1-2 code lives in the ingestion/ subfolder of this repo (it was the
+# Stage 1-2 code lives in the src/transformations/stage_1_2(ingestion)/ subproject of this repo (it was the
 # standalone json--bronze--postgres repo before the merge).
 #
 # Flow: start the in-repo mock NatGasHub API, fetch /api/firms from it, then
@@ -29,7 +29,7 @@ env:
 # (checkout, setup-python, upload-artifact) ignore this by design.
 defaults:
   run:
-    working-directory: ingestion
+    working-directory: src/transformations/stage_1_2(ingestion)
 
 jobs:
   ingest:
@@ -65,7 +65,7 @@ jobs:
         run: python -m src.main --file "$FETCHED_FILE" --create-tables
 
       # The ingestion also exports each Bronze table to Parquet (under
-      # ingestion/parquet_output/) before loading the database. Publish those
+      # the subproject's parquet_output/) before loading the database. Publish those
       # files as a build artifact so they can be downloaded or handed to a
       # later stage. NB: upload-artifact paths are repo-relative -- the
       # working-directory default above does not apply to uses: steps.
@@ -74,5 +74,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bronze-parquet-firm-${{ github.run_id }}
-          path: ingestion/parquet_output/
+          path: src/transformations/stage_1_2(ingestion)/parquet_output/
           if-no-files-found: warn

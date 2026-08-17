@@ -324,12 +324,12 @@ pick the workflow → **Run workflow**.
 
 The former `nsrivvc/json--bronze--postgres` repo (stage 1: mock NatGasHub API,
 stage 2: JSON -> Bronze ingestion) is merged into this repository under
-[`ingestion/`](ingestion/). It is a self-contained subproject with its own
+[`src/transformations/stage_1_2(ingestion)/`](src/transformations/stage_1_2(ingestion)/). It is a self-contained subproject with its own
 `src/` (`mock_api/`, `bronze/`, `db/`), `requirements.txt`, `.env` and README —
 nothing in it imports from the stage 3-4-5 code or vice versa.
 
 Its five workflows run at the root like every other one, with
-`defaults.run.working-directory: ingestion`:
+`defaults.run.working-directory` pointed at the subproject:
 
 | workflow | feed | loads |
 |---|---|---|
