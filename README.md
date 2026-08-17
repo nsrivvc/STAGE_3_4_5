@@ -320,59 +320,37 @@ logs a warning and exits 0.
 To run any of them: push the repo, add the `DATABASE_URL` secret, then Actions →
 pick the workflow → **Run workflow**.
 
-### Triggering from the ingestion repo
+### Stage 1-2 ingestion lives in this repo
 
-`firm(stage3_4_5).yml` accepts a `repository_dispatch` of type
-`bronze-firm-loaded`, so `nsrivvc/json--bronze--postgres` can kick off the Silver
-pipeline the moment its Bronze load finishes.
+The former `nsrivvc/json--bronze--postgres` repo (stage 1: mock NatGasHub API,
+stage 2: JSON -> Bronze ingestion) is merged into this repository under
+[`ingestion/`](ingestion/). It is a self-contained subproject with its own
+`src/` (`mock_api/`, `bronze/`, `db/`), `requirements.txt`, `.env` and README —
+nothing in it imports from the stage 3-4-5 code or vice versa.
 
-**`workflow_run` does not work here** — it only observes workflows in the *same*
-repository. Cross-repo requires an explicit dispatch, and a job's default
-`GITHUB_TOKEN` is scoped to its own repo and cannot dispatch to another one. So
-this needs a token with `contents: write` on this repo (a fine-grained PAT or a
-GitHub App installation token), stored in the ingestion repo as e.g.
-`SILVER_REPO_TOKEN`.
+Its five workflows run at the root like every other one, with
+`defaults.run.working-directory: ingestion`:
 
-Add this as the last step of `bronze_ingest_firm.yml` in the ingestion repo:
+| workflow | feed | loads |
+|---|---|---|
+| `bronze_ingest_firm.yml` | firm | `bronze.gtran_firm` |
+| `bronze_ingest_interruptibles.yml` | interruptible | `bronze.gtran_it` |
+| `bronze_ingest_ioc.yml` | index of customers | `bronze.gindex` |
+| `bronze_ingest_awards.yml` | capacity release awards | `bronze.gawd` |
+| `bronze_ingest.yml` | all four in parallel | (fan-out) |
 
-```yaml
-      # Only on success: a failed load must not kick off Silver over bad data.
-      - name: Trigger Silver firm pipeline
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.SILVER_REPO_TOKEN }}
-        run: |
-          gh api repos/nsrivvc/STAGE_3_4_5/dispatches \
-            -f event_type=bronze-firm-loaded \
-            -f 'client_payload[ingest_run_id]=${{ github.run_id }}'
-```
+Because everything is one repo, the feed orchestrators
+(`firm(stage3_4_5).yml`, `interruptible(stage3_4_5).yml`,
+`awards(stage3_4_5).yml`) now begin with an `ingest` job that calls the
+matching `bronze_ingest_*.yml` as a reusable workflow, then chain stage 3 ->
+4 -> 5 -> finals off it. One `workflow_dispatch` of an orchestrator runs the
+whole pipeline end to end; the old cross-repo `repository_dispatch` handoff
+(`bronze-*-loaded`) is no longer emitted, though the orchestrators still
+accept those events for backwards compatibility.
 
 The FINAL tables always run at the end of the chain: they consolidate whatever
 feeds currently sit in Silver, so a firm-only run rebuilds them from firm's
 fresh rows plus whatever the other feeds last left behind.
-
-The other feeds' orchestrators listen the same way — `interruptible(stage3_4_5).yml`
-accepts `bronze-interruptible-loaded` and `awards(stage3_4_5).yml` accepts
-`bronze-awards-loaded`. Each needs the matching dispatch step at the end of its
-feed's ingestion workflow, e.g. for `bronze_ingest_interruptibles.yml`:
-
-```yaml
-      - name: Trigger Silver interruptible pipeline
-        if: success()
-        env:
-          GH_TOKEN: ${{ secrets.SILVER_REPO_TOKEN }}
-        run: |
-          gh api repos/nsrivvc/STAGE_3_4_5/dispatches \
-            -f event_type=bronze-interruptible-loaded \
-            -f 'client_payload[ingest_run_id]=${{ github.run_id }}'
-```
-
-**No, the database itself cannot be the trigger.** Neon emits no webhook on
-data change, and `LISTEN`/`NOTIFY` needs a process holding a connection open,
-which a runner cannot do between runs. Polling on a schedule is the only
-DB-driven alternative, and this repo deliberately has no schedules. A DB check
-works as a *guard* (skip when `bronze.ingestion_log` shows nothing new) but not
-as a trigger — the dispatch above is the reliable signal.
 
 For schedulers:
 

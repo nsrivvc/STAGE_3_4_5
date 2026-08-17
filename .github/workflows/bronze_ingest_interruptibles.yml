@@ -1,0 +1,77 @@
+name: bronze-ingest-interruptibles
+
+# JSON Ingestion -> Bronze for the INTERRUPTIBLE (IT) transactional-reporting
+# feed. Stage 1-2 code lives in the ingestion/ subfolder of this repo (it was
+# the standalone json--bronze--postgres repo before the merge).
+#
+# Flow: start the in-repo mock NatGasHub API, fetch /api/interruptibles from
+# it, then run the ingestion (validate -> route -> transform -> Parquet export
+# -> load into bronze.gtran_it on Neon).
+#
+# Runs three ways:
+#   * on its own via "Run workflow" (workflow_dispatch),
+#   * as one of the four parallel jobs of bronze_ingest.yml (workflow_call), or
+#   * as the first job of the interruptible(stage3_4_5).yml end-to-end
+#     orchestrator, which chains stage 3-4-5 directly after it.
+#
+# To point at the real NatGasHub API later: drop the "Start mock" step and
+# fetch the live endpoint instead (with the API key secret).
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  API_BASE: "http://127.0.0.1:8000"
+  FETCHED_FILE: "data/_fetched_interruptibles.json"
+
+# All run: steps execute inside the ingestion subproject. uses: steps
+# (checkout, setup-python, upload-artifact) ignore this by design.
+defaults:
+  run:
+    working-directory: ingestion
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Start mock NatGasHub API
+        run: |
+          nohup uvicorn src.mock_api.app:app --host 127.0.0.1 --port 8000 > mock_api.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf "$API_BASE/health" > /dev/null && exit 0
+            sleep 1
+          done
+          echo "mock API failed to start"; cat mock_api.log; exit 1
+
+      - name: Fetch interruptible JSON from the API
+        run: curl -sf "$API_BASE/api/interruptibles" -o "$FETCHED_FILE"
+
+      - name: Run Bronze ingestion
+        env:
+          DB_TYPE: postgres
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Neon connection string
+          SOURCE_SYSTEM: NatGasHub
+          TRIGGERED_BY: github-actions
+        run: python -m src.main --file "$FETCHED_FILE" --create-tables
+
+      # The ingestion also exports each Bronze table to Parquet (under
+      # ingestion/parquet_output/) before loading the database. Publish those
+      # files as a build artifact so they can be downloaded or handed to a
+      # later stage. NB: upload-artifact paths are repo-relative -- the
+      # working-directory default above does not apply to uses: steps.
+      - name: Upload Parquet export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bronze-parquet-interruptibles-${{ github.run_id }}
+          path: ingestion/parquet_output/
+          if-no-files-found: warn

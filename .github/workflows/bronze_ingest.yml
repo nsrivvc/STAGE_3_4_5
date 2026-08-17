@@ -1,0 +1,76 @@
+name: bronze-ingest
+
+# Orchestrator: one dispatch runs ALL four feed ingestions simultaneously by
+# calling the per-source workflows as parallel jobs:
+#
+#   bronze_ingest_firm.yml            /api/firms           -> bronze.gtran_firm
+#   bronze_ingest_interruptibles.yml  /api/interruptibles  -> bronze.gtran_it
+#   bronze_ingest_ioc.yml             /api/ioc             -> bronze.gindex
+#   bronze_ingest_awards.yml          /api/awards          -> bronze.gawd
+#
+# Each per-source workflow can also be dispatched on its own from the Actions
+# tab; this file just fans out to all of them at once. Stage 1-2 code lives in
+# the ingestion/ subfolder of this repo.
+#
+# The Bronze DDL is applied once, before the fan-out, so the four parallel
+# ingests never race each other creating tables — their own --create-tables
+# steps then find everything already present and no-op.
+# Manual runs only ("Run workflow" in the Actions tab) — no schedule, so this
+# never fires on its own.
+on:
+  workflow_dispatch:
+
+# All run: steps execute inside the ingestion subproject. uses: steps ignore
+# this by design.
+defaults:
+  run:
+    working-directory: ingestion
+
+jobs:
+  ensure-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create Bronze tables (once, before the parallel ingests)
+        env:
+          DB_TYPE: postgres
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Neon connection string
+        run: |
+          python - <<'PY'
+          from src.bronze import schemas
+          from src.config import Settings
+          from src.db.connection import get_writer
+
+          writer = get_writer(Settings(), dry_run=False)
+          writer.ensure_schema(schemas.generate_ddl())
+          writer.close()
+          print("bronze schema ensured")
+          PY
+
+  firm:
+    needs: ensure-schema
+    uses: ./.github/workflows/bronze_ingest_firm.yml
+    secrets: inherit
+
+  interruptibles:
+    needs: ensure-schema
+    uses: ./.github/workflows/bronze_ingest_interruptibles.yml
+    secrets: inherit
+
+  ioc:
+    needs: ensure-schema
+    uses: ./.github/workflows/bronze_ingest_ioc.yml
+    secrets: inherit
+
+  awards:
+    needs: ensure-schema
+    uses: ./.github/workflows/bronze_ingest_awards.yml
+    secrets: inherit

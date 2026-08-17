@@ -15,11 +15,11 @@ name: awards (stage 3-4-5)
 # awards's fresh rows plus whatever the other feeds last left behind, and once
 # other feeds have landed they fold into the same master tables.
 #
-# TRIGGERED FROM THE INGESTION REPO
-# ---------------------------------
-# The ingestion repo fires a repository_dispatch of type bronze-awards-loaded
-# at the end of its awards Bronze load, exactly like the firm orchestrator's
-# bronze-firm-loaded. See the README section "Triggering from the ingestion repo".
+# The ingestion code lives in this repo's ingestion/ subfolder, so the whole
+# pipeline (stage 1-2 ingest first, then 3-4-5) chains as plain jobs. The
+# repository_dispatch trigger is kept for backwards compatibility with
+# anything that still posts bronze-awards-loaded from outside; a
+# dispatch-triggered run also re-ingests first, which is idempotent.
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -30,8 +30,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ingest:
+    name: stage 1-2 - ingest to bronze
+    uses: "./.github/workflows/bronze_ingest_awards.yml"
+    secrets: inherit
+
   stage3:
     name: stage 3 - bronze to silver
+    needs: ingest
     uses: "./.github/workflows/(stage3)bronze_to_silver_awards.yml"
     secrets: inherit
 

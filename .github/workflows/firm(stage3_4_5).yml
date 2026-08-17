@@ -1,25 +1,21 @@
 name: firm (stage 3-4-5)
 
-# End-to-end run for the FIRM feed: stage 3, then 4, then 5, then the three
-# cross-feed FINAL tables.
+# End-to-end run for the FIRM feed: stage 1-2 ingestion, then stage 3, 4, 5,
+# then the three cross-feed FINAL tables.
 #
 # This is an orchestrator, not a copy. Each job calls the real per-stage
 # workflow file as a reusable workflow, so there is exactly one definition of
 # what each stage does. Editing a stage's own .yml changes it here too.
 #
-#   stage3  ->  stage4  ->  stage5 core ------\
-#                           stage5 locations   >-- final core / locations / rates
-#                           stage5 rates -----/
+#   ingest (stage 1-2)  ->  stage3  ->  stage4  ->  stage5 core ------\
+#                                                   stage5 locations   >-- finals
+#                                                   stage5 rates -----/
 #
-# TRIGGERED FROM THE INGESTION REPO
-# ---------------------------------
-# nsrivvc/json--bronze--postgres fires a repository_dispatch at the end of
-# bronze_ingest_firm.yml, once that run has loaded Bronze on Neon. `workflow_run`
-# cannot be used: it only observes workflows in the same repository.
-#
-# The ingestion side needs a token with `contents: write` on THIS repo, since a
-# job's default GITHUB_TOKEN is scoped to its own repository and cannot dispatch
-# across repos. See the README section "Triggering from the ingestion repo".
+# The ingestion code lives in this repo's ingestion/ subfolder, so the whole
+# pipeline chains as plain jobs. The repository_dispatch trigger below is kept
+# for backwards compatibility with anything that still posts
+# bronze-firm-loaded from outside; a dispatch-triggered run also re-ingests
+# first, which is idempotent.
 #
 # ABOUT THE FINAL TABLES
 # ----------------------
@@ -39,8 +35,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ingest:
+    name: stage 1-2 - ingest to bronze
+    uses: "./.github/workflows/bronze_ingest_firm.yml"
+    secrets: inherit
+
   stage3:
     name: stage 3 - bronze to silver
+    needs: ingest
     uses: "./.github/workflows/(stage3)bronze_to_silver_firm.yml"
     secrets: inherit
 
