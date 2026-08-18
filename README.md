@@ -339,6 +339,19 @@ Its five workflows run at the root like every other one, with
 | `bronze_ingest_awards.yml` | capacity release awards | `bronze.gawd` |
 | `bronze_ingest.yml` | all four in parallel | (fan-out) |
 
+**Running the mock NatGasHub API locally** (stage 1 — serves the JSON feeds):
+
+```powershell
+cd "src\transformations\stage_1_2(ingestion)"
+python -m uvicorn src.mock_api.app:app --host 127.0.0.1 --port 8000
+```
+
+Then `http://127.0.0.1:8000/docs` for the interactive endpoint list, or hit
+`/api/firms`, `/api/interruptibles`, `/api/ioc`, `/api/awards` directly — each
+returns the matching `data/*.json` fixture verbatim. Full instructions (CORS,
+changing the served data, how CI starts it automatically) are in the
+[subproject README](src/transformations/stage_1_2(ingestion)/README.md).
+
 Because everything is one repo, the feed orchestrators
 (`firm(stage3_4_5).yml`, `interruptible(stage3_4_5).yml`,
 `awards(stage3_4_5).yml`) now begin with an `ingest` job that calls the

@@ -1,18 +1,41 @@
 """
 app.py
 ======
-FastAPI application that impersonates NatGasHub for local development.
+FastAPI application that impersonates NatGasHub. This is STAGE 1 of the
+pipeline: the "external API" every ingest fetches from until the real
+NatGasHub endpoint (plus its API-key secret) replaces it.
 
-Run from the repository root:
+HOW TO RUN IT LOCALLY
+---------------------
+Run from THIS SUBPROJECT's root -- src/transformations/stage_1_2(ingestion) --
+because the module path `src.mock_api.app` resolves against the current
+working directory:
 
-    uvicorn src.mock_api.app:app --reload --host 0.0.0.0 --port 8000
+    cd "src/transformations/stage_1_2(ingestion)"
+    python -m uvicorn src.mock_api.app:app --host 127.0.0.1 --port 8000
 
-Consumers point NATGASHUB_BASE_URL (e.g. http://localhost:8000) at this server
-and call the /api/* endpoints below. Each endpoint returns the corresponding
-/data fixture verbatim — this service never touches Neon/Postgres.
+Add uvicorn's --reload flag to auto-restart on code edits (unrelated to the
+pipeline's own --reload). Then:
 
-CORS origins for browser-based consumers default to common local dev ports and
-can be overridden with a comma-separated MOCK_API_CORS_ORIGINS env var.
+    http://127.0.0.1:8000/health              liveness probe
+    http://127.0.0.1:8000/docs                interactive Swagger UI
+    http://127.0.0.1:8000/api/firms           -> data/firms_test.json
+    http://127.0.0.1:8000/api/interruptibles  -> data/interruptibles_test.json
+    http://127.0.0.1:8000/api/ioc             -> data/ioc_test.json
+    http://127.0.0.1:8000/api/awards          -> data/awards_test.json
+
+Each endpoint returns the matching fixture in this subproject's data/ folder
+VERBATIM (see loader.py) -- to change what the API serves, edit the fixture
+file; no code changes needed. This service never touches Neon/Postgres.
+
+IN CI, NOTHING TO DO MANUALLY: every bronze_ingest_*.yml workflow starts its
+own copy on 127.0.0.1:8000 inside the runner ("Start mock NatGasHub API"
+step), curls the endpoint into data/_fetched_*.json, feeds that file to
+`python -m src.main`, and the server dies with the job.
+
+CORS origins for browser-based consumers (e.g. the orchestration interface's
+dev frontend) default to common local dev ports below and can be overridden
+with a comma-separated MOCK_API_CORS_ORIGINS env var.
 """
 
 from __future__ import annotations

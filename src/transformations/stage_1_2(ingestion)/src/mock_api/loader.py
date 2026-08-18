@@ -1,9 +1,14 @@
 """
 loader.py
 =========
-Reads JSON fixtures from the repository's /data directory and returns them
-parsed but otherwise untouched — no normalisation, no flattening, no models.
-The mock's contract is byte-level fidelity to whatever the fixture holds.
+Reads JSON fixtures from this subproject's data/ directory -- i.e.
+src/transformations/stage_1_2(ingestion)/data/ -- and returns them parsed but
+otherwise untouched: no normalisation, no flattening, no models. The mock's
+contract is byte-level fidelity to whatever the fixture holds.
+
+DATA_DIR is anchored to THIS FILE's location (not the process working
+directory), so the fixtures are found no matter where uvicorn is launched
+from; only the `src.mock_api.app` import path is cwd-sensitive (see app.py).
 """
 
 from __future__ import annotations
@@ -14,7 +19,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-# repo_root/src/mock_api/loader.py -> repo_root/data
+# <subproject>/src/mock_api/loader.py -> <subproject>/data
+# (parents[2] climbs mock_api -> src -> the stage_1_2(ingestion) subproject root)
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 
 

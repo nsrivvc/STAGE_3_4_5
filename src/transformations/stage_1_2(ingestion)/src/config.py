@@ -31,8 +31,11 @@ class Settings:
 
     # Postgres / Neon connection string, e.g.
     #   postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require
+    # Stripped because the repo's DATABASE_URL secret carries a trailing
+    # newline, which psycopg rejects ('invalid channel_binding value:
+    # "require\n"').
     database_url: Optional[str] = field(
-        default_factory=lambda: os.getenv("DATABASE_URL")
+        default_factory=lambda: (os.getenv("DATABASE_URL") or "").strip() or None
     )
 
     # Azure SQL (used only when db_type == "azure_sql")
