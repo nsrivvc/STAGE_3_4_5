@@ -25,6 +25,10 @@ name: firm (stage 3-4-5)
 # other feeds have landed they fold into the same master tables.
 on:
   workflow_dispatch:
+  # Called by shipper_scope_apply.yml when the dashboard changes which
+  # shippers are attached, so a scope change replays this same chain
+  # rather than a second copy of it.
+  workflow_call:
   repository_dispatch:
     types: [bronze-firm-loaded]
 

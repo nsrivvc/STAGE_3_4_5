@@ -22,6 +22,10 @@ name: interruptible (stage 3-4-5)
 # dispatch-triggered run also re-ingests first, which is idempotent.
 on:
   workflow_dispatch:
+  # Called by shipper_scope_apply.yml when the dashboard changes which
+  # shippers are attached, so a scope change replays this same chain
+  # rather than a second copy of it.
+  workflow_call:
   repository_dispatch:
     types: [bronze-interruptible-loaded]
 

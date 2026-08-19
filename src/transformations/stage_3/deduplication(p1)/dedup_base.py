@@ -36,6 +36,15 @@ it works for any Bronze table, present or future, with no column list to
 maintain, and `INSERT ... SELECT *` stays valid because the clone has exactly
 the source's columns in the source's order.
 
+SHIPPER SCOPING
+---------------
+Both classes below also apply the shipper scope configured in the dashboard
+(<BRONZE_SCHEMA>.shipper_mapping). These two classes are the only place in the
+pipeline that reads a Bronze table, so filtering here scopes every later phase
+and every feed at once -- see core/shipper_scope.py for the rule. With no
+shippers configured the filter is a no-op and this phase behaves exactly as it
+did before.
+
 WHERE THE OUTPUT GOES
 ---------------------
 DECOMP_SCHEMA (default `silver_staging`), the staging schema the rest of stage 3
@@ -47,6 +56,7 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
+from ....core import shipper_scope
 from ....core.base import SilverTransformation
 
 
@@ -73,6 +83,10 @@ class Deduplication(SilverTransformation):
         return f"""
         CREATE SCHEMA IF NOT EXISTS {self.target_schema};
 
+        -- Shipper scoping config, provisioned here so the filter in
+        -- transform_sql always has a table to read (see core/shipper_scope.py).
+        {shipper_scope.ddl(self.source_schema)}
+
         -- LIKE clones the Bronze table's columns, so this base needs no
         -- knowledge of them and keeps working as the source schema evolves.
         CREATE TABLE IF NOT EXISTS {self.target_schema}.{self.table_name} (
@@ -88,8 +102,13 @@ class Deduplication(SilverTransformation):
         -- was already recorded is skipped; anything new or changed hashes
         -- differently and is inserted. Rows inserted here are exactly the rows
         -- that proceed to p2 onwards.
+        --
+        -- The WHERE is the shipper scope: with shippers attached to this feed
+        -- only their DUNS get this far, so every later phase is scoped without
+        -- knowing scoping exists. Unconfigured, it is a no-op.
         INSERT INTO {self.target_schema}.{self.table_name}
-        SELECT * FROM {self.source_schema}.{self.source_table}
+        SELECT s.* FROM {self.source_schema}.{self.source_table} s
+        {shipper_scope.where(self.source_schema, self.source_table, self.feed)}
         ON CONFLICT (hash_key) DO NOTHING
         """
 
@@ -179,6 +198,10 @@ class NestedArrayDeduplication(SilverTransformation):
         return f"""
         CREATE SCHEMA IF NOT EXISTS {self.target_schema};
 
+        -- Shipper scoping config, provisioned here so the filter in
+        -- transform_sql always has a table to read (see core/shipper_scope.py).
+        {shipper_scope.ddl(self.source_schema)}
+
         CREATE TABLE IF NOT EXISTS {self.target_schema}.{self.table_name} (
             {cols},
             CONSTRAINT uq_{self.table_name}_hash UNIQUE (hash_key)
@@ -215,5 +238,9 @@ class NestedArrayDeduplication(SilverTransformation):
         FROM {self.source_schema}.{self.source_table} s
         CROSS JOIN LATERAL jsonb_array_elements(s.raw_payload -> '{self.section}') AS el
         WHERE jsonb_typeof(s.raw_payload -> '{self.section}') = 'array'
+        -- Shipper scope, evaluated against the PARENT contract row: the DUNS
+        -- lives on the contract, not inside a location/rate element, so an
+        -- out-of-scope contract contributes no elements at all.
+        {shipper_scope.and_where(self.source_schema, self.source_table, self.feed)}
         ON CONFLICT (hash_key) DO NOTHING
         """

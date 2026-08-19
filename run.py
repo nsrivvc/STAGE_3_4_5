@@ -10,6 +10,7 @@ Examples:
     python run.py --table silver_firm_transport_rate  # run one
     python run.py --group rec_del_pairing             # run one phase folder
     python run.py --list-groups                       # show phase folders
+    python run.py --shippers --source firm            # show the shipper scope for one feed
     python run.py --all                               # run everything
 
 Exit code is non-zero if any transformation failed (so schedulers flag the job).
@@ -35,6 +36,9 @@ def main(argv=None) -> int:
     group.add_argument("--group", metavar="FOLDER",
                        help="Run every transformation in one phase folder (e.g. rec_del_pairing)")
     group.add_argument("--list-groups", action="store_true", help="List phase folders that contain transformations")
+    group.add_argument("--shippers", action="store_true",
+                       help="Show the shipper scope currently configured in "
+                            "<BRONZE_SCHEMA>.shipper_mapping (narrow with --source)")
     group.add_argument("--all", action="store_true", help="Run all transformations")
     group.add_argument("--show-sql", metavar="NAME", help="Print a transformation's SQL and exit")
 
@@ -88,6 +92,14 @@ def main(argv=None) -> int:
     if args.inspect:
         from src.core import inspect as inspect_mod
         inspect_mod.inspect()
+        return 0
+
+    if args.shippers:
+        from src.core import shipper_scope
+        from src.db.connection import get_engine
+
+        with get_engine().connect() as conn:
+            print(shipper_scope.describe(conn, settings.bronze_schema, args.source))
         return 0
 
     if args.list_groups:

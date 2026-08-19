@@ -1,0 +1,125 @@
+name: shipper-scope-apply
+
+# Re-applies the shipper scope after the dashboard adds or removes a shipper.
+#
+# WHY THIS FILE EXISTS AND WHAT IT IS NOT
+# ---------------------------------------
+# It does NOT do the filtering. The filter is a WHERE clause inside the stage-3
+# deduplication INSERT (src/core/shipper_scope.py), because it has to be in the
+# same transaction that moves rows out of Bronze -- a separate job could only
+# ever delete out-of-scope rows AFTER they had already reached staging.
+#
+# What this file is, is the TRIGGER. Attaching a shipper only changes a config
+# row; the feed keeps whatever scope it was last built with until it is rebuilt.
+# So the dashboard posts here, and this replays the affected feeds. The stage
+# workflows all run with --reload, so the rebuild re-evaluates the mapping table
+# and lands the new scope with no extra logic anywhere.
+#
+# HOW THE DASHBOARD FIRES IT
+# --------------------------
+#   POST /repos/<owner>/<repo>/dispatches
+#   { "event_type": "shipper-scope-changed",
+#     "client_payload": { "sources": "firm,interruptible" } }
+#
+# `sources` is a comma-separated list of the feeds the workflow has selected, or
+# "all". Any number of them: each feed's job is gated independently, so one
+# selected feed rebuilds one feed and four rebuild four. Omit it and every feed
+# is replayed, which is always correct and only ever costs time.
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Comma-separated feeds to re-scope: firm, interruptible, awards - or 'all'"
+        required: true
+        default: "all"
+
+  repository_dispatch:
+    types: [shipper-scope-changed]
+
+# Serialised against itself so two rapid dashboard edits cannot rebuild the same
+# feed concurrently. cancel-in-progress: an edit supersedes the one before it,
+# and only the newest scope matters.
+concurrency:
+  group: shipper-scope-apply
+  cancel-in-progress: true
+
+jobs:
+  # Resolves the feed list once and records the scope being applied in the run
+  # log, so a rebuild can be traced back to the exact config that caused it.
+  scope:
+    name: resolve scope
+    runs-on: ubuntu-latest
+    outputs:
+      sources: ${{ steps.resolve.outputs.sources }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      BRONZE_SCHEMA: bronze
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check DATABASE_URL is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set for this repository."
+            exit 1
+          fi
+
+      # workflow_dispatch puts the list in inputs; repository_dispatch puts it in
+      # client_payload. Neither present (or "all") means every feed.
+      - name: Resolve which feeds to rebuild
+        id: resolve
+        run: |
+          RAW="${{ github.event.inputs.sources || github.event.client_payload.sources || 'all' }}"
+          RAW="$(echo "$RAW" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$RAW" ] || [ "$RAW" = "all" ]; then
+            RAW="firm,interruptible,awards"
+          fi
+          echo "sources=$RAW" >> "$GITHUB_OUTPUT"
+          echo "Feeds to rebuild: $RAW"
+
+      # The scope that is about to be applied, printed per feed. This is the
+      # audit trail: the run that rebuilt a feed shows exactly which DUNS were
+      # allowed and which were dropped.
+      - name: Shipper scope being applied
+        run: |
+          for FEED in $(echo "${{ steps.resolve.outputs.sources }}" | tr ',' ' '); do
+            echo "::group::$FEED"
+            python run.py --shippers --source "$FEED"
+            echo "::endgroup::"
+          done
+
+  # One gated job per feed, each calling that feed's existing end-to-end
+  # workflow. Nothing about the chain is duplicated here -- editing a stage's
+  # own .yml changes what a re-scope runs too.
+  #
+  # The chain re-ingests before stage 3. That is deliberate and idempotent (see
+  # the orchestrators' own notes): Bronze is untouched by a scope change, so the
+  # ingest is a no-op re-fetch, and starting from the top means a re-scope and a
+  # normal run are the same code path rather than two that can drift apart.
+  firm:
+    name: re-scope firm
+    needs: scope
+    if: contains(format('{0},', needs.scope.outputs.sources), 'firm,')
+    uses: "./.github/workflows/firm(stage3_4_5).yml"
+    secrets: inherit
+
+  interruptible:
+    name: re-scope interruptible
+    needs: scope
+    if: contains(format('{0},', needs.scope.outputs.sources), 'interruptible,')
+    uses: "./.github/workflows/interruptible(stage3_4_5).yml"
+    secrets: inherit
+
+  awards:
+    name: re-scope awards
+    needs: scope
+    if: contains(format('{0},', needs.scope.outputs.sources), 'awards,')
+    uses: "./.github/workflows/awards(stage3_4_5).yml"
+    secrets: inherit

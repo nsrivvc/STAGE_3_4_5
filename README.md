@@ -218,6 +218,72 @@ present — that's the signal a drop is needed before it will load again.
 > This bites hardest while iterating on unfinished business rules: once a table
 > is created, editing its SQL changes nothing until you drop it.
 
+## Shipper scoping
+
+The dashboard's **Shippers** panel attaches shippers to a workflow as
+KHolderName + KHolderNumber pairs, each with an **Add** or **Remove** action.
+Those rows land in `<BRONZE_SCHEMA>.shipper_mapping`, and the pipeline filters
+Bronze down to them.
+
+| column | meaning |
+| --- | --- |
+| `workflow_id` | which dashboard workflow attached it — display/audit only |
+| `source` | feed this row scopes (`firm`, `interruptible`, `awards`, `ioc`, `index`); `NULL` = every feed |
+| `kholdernumber` | the DUNS matched against the feed |
+| `kholdername` | display name as entered |
+| `action` | `add` or `remove` |
+
+The rule, per feed:
+
+* **no `add` rows** → unscoped, everything passes (the behaviour before anyone
+  configures a shipper — this feature is inert until a row exists)
+* **one or more `add` rows** → only those DUNS are processed
+* **any `remove` row** → that DUNS never passes, even if also added
+
+**Where it is applied.** `Deduplication` and `NestedArrayDeduplication` in
+`deduplication(p1)` are the only two classes that read a Bronze table — p2, p3,
+stage 4 and stage 5 all read the staging schema those two write. The filter is a
+`WHERE` clause inside their `INSERT`, so it scopes every feed and every grain
+(core / locations / rates) at once, and every later phase inherits the scope
+without knowing scoping exists. See `src/core/shipper_scope.py`.
+
+Each feed spells the shipper differently, so the join column comes from
+`SHIPPER_KEYS` rather than being hardcoded:
+
+| Bronze table | feed | DUNS column |
+| --- | --- | --- |
+| `gtran_firm` | firm | `kholder` |
+| `gtran_it` | interruptible | `kholder` |
+| `gawd` | awards | `bidderduns` |
+| `gindex` | index | `shipperduns` |
+
+A Bronze table missing from that map is **not** filtered, and logs a warning — a
+feed with no shipper concept should not silently lose every row. Adding a feed
+means adding one line there and nothing else.
+
+Inspect the live scope with:
+
+```bash
+python run.py --shippers                  # everything configured
+python run.py --shippers --source firm    # just one feed
+```
+
+**Applying a change.** A shipper row only changes config; the feed keeps
+whatever scope it was last built with until it is rebuilt. `shipper_scope_apply.yml`
+is the trigger — the dashboard posts a `shipper-scope-changed`
+`repository_dispatch` naming the selected feeds, and it replays those feeds'
+existing `*(stage3_4_5).yml` chains. Those run with `--reload`, so the rebuild
+re-evaluates the mapping table and lands the new scope with no extra logic:
+
+```
+POST /repos/<owner>/<repo>/dispatches
+{ "event_type": "shipper-scope-changed",
+  "client_payload": { "sources": "firm,interruptible" } }
+```
+
+Any number of feeds can be named; each has its own gated job. Omitting
+`sources` replays all of them.
+
 ## Parquet export
 
 Every table's rows are also written to Parquet, from a single hook in
