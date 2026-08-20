@@ -234,6 +234,16 @@ class GrainDecomposition(SilverTransformation):
     key_cols_list: List[str] = []
     columns: List[str] = []
 
+    #: Columns present in the source that this grain deliberately does NOT
+    #: carry. `LIKE` clones every source column, so listing a column in
+    #: `columns` is not enough to keep one out of the target -- it would just
+    #: sit there NULL. These are dropped after the clone.
+    #:
+    #: The awards feed needs this: its Bronze row keeps the nested `locations`
+    #: and `rates` JSON alongside the contract fields, and the core grain's
+    #: agreed schema excludes both (they become their own grains).
+    drop_columns: List[str] = []
+
     def __init__(self) -> None:
         for attr in ("feed", "grain", "source_table", "key_cols_list", "columns"):
             if not getattr(self, attr):
@@ -252,6 +262,11 @@ class GrainDecomposition(SilverTransformation):
 
     def create_table_sql(self) -> str:
         key = ", ".join(self.key_cols_list)
+        drops = "".join(
+            f"\n        ALTER TABLE {self.target_schema}.{self.table_name} "
+            f"DROP COLUMN IF EXISTS {c};"
+            for c in self.drop_columns
+        )
         return f"""
         CREATE SCHEMA IF NOT EXISTS {self.target_schema};
 
@@ -261,6 +276,7 @@ class GrainDecomposition(SilverTransformation):
             CONSTRAINT uq_{self.table_name}
                 UNIQUE NULLS NOT DISTINCT ({key})
         );
+        {drops}
         """
 
     def transform_sql(self) -> str:

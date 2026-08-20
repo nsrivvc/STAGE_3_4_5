@@ -7,11 +7,18 @@ model, producing `silver.awards_core_master_capacity`.
 That model lives in ../../models.py and is shared with the FINAL
 transformations, which UNION every feed's table for this grain into one.
 
-DORMANT: stage 3 produces no awards tables yet -- deduplication(p1) covers
-bronze.gawd, but there is no awards decomposition, so `awards_core` does not
-exist and the runner reports this as skipped. The mapping is left empty
-until the awards stage-3 output is defined; gawd is award-shaped
-(awardid, awdqty, awdbegdatetime), not contract-shaped.
+`ngh_contract_id` is **AwardNumber** for all three awards grains. The award's own
+`Id` identifies the core row, but the locations and rates elements do not carry
+it -- they carry OfferNumber / BidNumber / AwardNumber. AwardNumber is the only
+key present at every grain, so it is what lets the three join.
+
+Unmapped target columns are emitted as typed NULLs. `SPEC:` markers flag the
+mappings that are inferred rather than confirmed against the mapping sheet.
+
+NOT MAPPED, because the awards feed has no equivalent: `pipeline_duns` (only a
+TSP prop code and name are published), `evergreen`, `notice_period_days` and
+`calculated_end_date` (the far-future placeholder the sheet defines applies to
+the gTRAN feeds, not to a capacity release).
 """
 
 from __future__ import annotations
@@ -29,5 +36,33 @@ class SilverAwardsCoreMasterCapacity(MasterCapacityTransformation):
     source_table = "awards_core"
 
     column_map = {
-        # SPEC: awaiting the awards stage-3 output shape.
+        "ngh_contract_id": "awardnumber",
+        # No TSP DUNS in this feed -- only the prop code and the name.
+        "pipeline_name": "transportationserviceprovidername",
+        # SPEC: for a capacity release the acquiring contract is the replacement
+        # shipper's; `releaser_contract_number` below keeps the releaser's own.
+        "contract_number": "replacementshippercontractnumber",
+        "award_number": "awardnumber",
+        "offer_number": "offernumber",
+        "bid_number": "bidnumber",
+        "releaser_contract_number": "releasercontractnumber",
+        "posted_date": "NULLIF(postdatetime, '')::TIMESTAMPTZ",
+        # The release term is the award's contract window.
+        "begin_date": "NULLIF(releasetermstartdate, '')::TIMESTAMPTZ",
+        "end_date": "NULLIF(releasetermenddate, '')::TIMESTAMPTZ",
+        "contract_quantity": "NULLIF(awardquantitycontract, '')::NUMERIC",
+        "rate_schedule": "rateschedule",
+        # SPEC: the BIDDER acquires the released capacity, so the bidder is its
+        # holder and the releaser is the original holder.
+        "contract_holder": "biddername",
+        "contract_holder_duns": "bidderduns",
+        "releaser_name": "releasername",
+        "releaser_duns": "releaserduns",
+        "replacement_shipper_role_indicator": "replacementshipperroleindicator",
+        "term_notes": "specialtermsandmiscellaneousnotes",
+        "contract_type": "'AWARDS'",
+        "created_date": "NULLIF(createddate, '')::TIMESTAMPTZ",
+        "update_date": "updated_ts",
+        # The sheet's Source row names the feed literally.
+        "source": "'gAWD'",
     }

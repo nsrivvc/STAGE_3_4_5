@@ -106,13 +106,29 @@ class RecDelPairingTransformation(SilverTransformation):
         return self.decomp_schema
 
     def col(self, logical: str) -> str:
-        """Source column backing a logical field."""
+        """Source column backing a logical field.
+
+        A mapping of None means the feed genuinely has no such column -- see
+        `ref`. Only an ABSENT key is an error.
+        """
         try:
             return self.column_map[logical]
         except KeyError:  # pragma: no cover - developer error
             raise KeyError(
                 f"{type(self).__name__}.column_map is missing {logical!r}"
             ) from None
+
+    def ref(self, alias: str, logical: str, cast: str = "TEXT") -> str:
+        """`alias.column`, or a typed NULL when the feed has no such column.
+
+        Not every feed carries every logical field: the awards locations grain
+        has no zone at all, where firm and IT have `loczn`. Mapping it to None
+        keeps the output's column contract identical across feeds -- the column
+        exists and is NULL -- instead of forcing a fake source column or
+        special-casing the SQL per feed.
+        """
+        column = self.col(logical)
+        return f"{alias}.{column}" if column else f"NULL::{cast}"
 
     # ------------------------------------------------------------------ hooks
     def pair_predicate_sql(self) -> str:
@@ -211,7 +227,9 @@ class RecDelPairingTransformation(SilverTransformation):
         where = f"WHERE {self.source_filter}" if self.source_filter else ""
 
         key = self.col("contract_key")
-        code, nm, zn = self.col("loc_code"), self.col("loc_name"), self.col("loc_zone")
+        code, nm = self.col("loc_code"), self.col("loc_name")
+        # Zone is optional per feed (awards has none) -- see ref().
+        zn_r, zn_d = self.ref("r", "loc_zone"), self.ref("d", "loc_zone")
         purp, qti, qty = self.col("loc_purpose"), self.col("loc_qti"), self.col("loc_qty")
         sys_, api = self.col("source_system"), self.col("source_api")
         run, hsh = self.col("pipeline_run_id"), self.col("hash_key")
@@ -260,8 +278,8 @@ class RecDelPairingTransformation(SilverTransformation):
                 ELSE 'PAIRED'
             END,
 
-            r.{code}, r.{nm}, r.{zn}, r.{qti}, NULLIF(r.{qty}, '')::NUMERIC,
-            d.{code}, d.{nm}, d.{zn}, d.{qti}, NULLIF(d.{qty}, '')::NUMERIC,
+            r.{code}, r.{nm}, {zn_r}, r.{qti}, NULLIF(r.{qty}, '')::NUMERIC,
+            d.{code}, d.{nm}, {zn_d}, d.{qti}, NULLIF(d.{qty}, '')::NUMERIC,
 
             -- SPEC: reconcile receipt vs delivery qty into path_qty_dth
             NULL::NUMERIC,

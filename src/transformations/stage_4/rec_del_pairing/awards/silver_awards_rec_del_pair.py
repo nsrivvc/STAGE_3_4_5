@@ -1,20 +1,38 @@
 """
 silver_awards_rec_del_pair.py
 =============================
-Rec-del pairing for AWARDS.
+Rec-del pairing for the AWARDS feed: `<DECOMP_SCHEMA>.awards_locations` ->
+`silver.awards_rec_del_pair`.
 
-Source: the awards locations table produced by the decomposition phase.
-All pairing and term logic lives in the shared base -- see ../pairing_base.py,
-where the two `SPEC:` hooks are waiting for the business rules.
+See ../pairing_base.py for the pairing itself and the two SPEC hooks.
 
-DORMANT: no awards feed exists yet -- there is no awards table in Bronze and no
-awards feed in the ingestion router, so decomposition produces no
-`awards_locations`. The runner reports this as skipped ("missing sources") until
-that lands, then it starts working with no code change.
+COLUMN MAP
+----------
+The awards locations grain has its own agreed schema and shares no column names
+with firm/IT, so every logical field is remapped:
 
-TODO(confirm): `locations_table` and the `column_map` overrides below are guesses
-modelled on the firm feed, since no awards data exists to check against. Verify
-both before the first real run.
+    contract_key   awardnumber          the award, not the location. Each element
+                                        carries its own `Id`
+                                        ("...-AWARD-2026-000001-LOC-01"), which
+                                        identifies the LOCATION -- pairing needs
+                                        the thing both sides have in common.
+    loc_code       locationpropcode
+    loc_name       locationname
+    loc_zone       None                 awards carries no zone at all; the output
+                                        column stays NULL rather than borrowing
+                                        an unrelated field (see pairing_base.ref)
+    loc_purpose    locationpurposecode  already 'REC' / 'DEL', so the base's
+                                        default purpose values apply unchanged
+    loc_qti        locationquantitytypeindicator
+    loc_qty        awardquantitylocation
+    term_begin     releasetermstartdate the award-level release term, carried
+    term_end       releasetermenddate   onto each element as a parent column
+                                        (elements have only a SEASONAL window)
+
+TODO(confirm): `term_begin` / `term_end` use the release term rather than the
+element's SeasonalStartDate / SeasonalEndDate. The release term is the award's
+actual contract window and matches what firm/IT pass through; the seasonal
+dates are a narrower sub-window. Confirm which the term transform should see.
 """
 
 from __future__ import annotations
@@ -32,6 +50,13 @@ class SilverAwardsRecDelPair(RecDelPairingTransformation):
 
     column_map = {
         **RecDelPairingTransformation.column_map,
-        "contract_key": "awardid",   # TODO(confirm): awards contract key
-        "loc_qty": "awardqtyloc",    # TODO(confirm): awards location quantity
+        "contract_key": "awardnumber",
+        "loc_code": "locationpropcode",
+        "loc_name": "locationname",
+        "loc_zone": None,                       # not present in the awards feed
+        "loc_purpose": "locationpurposecode",
+        "loc_qti": "locationquantitytypeindicator",
+        "loc_qty": "awardquantitylocation",
+        "term_begin": "releasetermstartdate",
+        "term_end": "releasetermenddate",
     }
