@@ -1,0 +1,88 @@
+name: (stage5)master-capacity [finals]
+
+# The three cross-feed FINAL tables, run ONCE after feeds finish — however the
+# feeds were triggered.
+#
+# WHY THIS IS A SEPARATE WORKFLOW
+# -------------------------------
+# The finals are cross-feed: they UNION whichever per-feed master capacity
+# tables exist. So they need to run once, after every feed that is going to run
+# has finished — never once per feed.
+#
+# They used to run at the end of each `<feed>(stage3_4_5).yml`. With one feed
+# that was fine. With three fired at once it was not: the three FINAL workflows
+# are guarded by the concurrency groups `stage5-final-core`, `-locations` and
+# `-rates`, and GitHub keeps at most ONE RUNNING PLUS ONE PENDING request per
+# group. A third arrival evicts the queued one:
+#
+#     Canceling since a higher priority waiting request for stage5-final-rates exists
+#
+# That cancelled job belonged to a feed's own run, so it cancelled that feed's
+# entire run. Exactly one feed lost, chosen by a race — which is why a
+# three-source run failed a different source every time.
+#
+# HOW THIS FIXES IT
+# -----------------
+# `workflow_run` fires when a feed orchestrator COMPLETES. Three feeds finishing
+# around the same time therefore produce up to three runs OF THIS WORKFLOW — and
+# because it holds a single `stage5-finals` concurrency group with
+# `cancel-in-progress: true`, the newest supersedes the older ones. The
+# supersession now happens between runs of THIS workflow, which no feed's run
+# depends on, so no feed is ever cancelled by it.
+#
+# The surviving run is the LAST one, triggered by the LAST feed to finish, so it
+# consolidates after every feed's stage 5 is done. That also closes the
+# correctness hazard the old cancellations were masking: previously whichever
+# finals call won the race was not necessarily the last, so it could consolidate
+# while another feed's stage 5 was still running — publishing stale or missing
+# rows and exiting green.
+#
+# NO DOUBLE RUN
+# -------------
+# `all_sources(stage1-5).yml` and `shipper_scope_apply.yml` invoke the feed
+# orchestrators as REUSABLE WORKFLOWS (`uses:`), which run as jobs inside the
+# caller and emit NO `workflow_run` event. Those two run the finals themselves,
+# once, after their own feed jobs. So:
+#
+#   direct dispatch of a feed workflow  -> finals via this file (coalesced)
+#   all_sources / shipper_scope_apply   -> finals via their own jobs
+#
+# Either path runs the finals exactly once, after the feeds.
+on:
+  workflow_run:
+    workflows:
+      - "firm (stage 3-4-5)"
+      - "interruptible (stage 3-4-5)"
+      - "awards (stage 3-4-5)"
+    types: [completed]
+
+  # Manual re-consolidation without re-running any feed.
+  workflow_dispatch:
+
+# The whole point: one finals run at a time, newest wins. `cancel-in-progress`
+# is TRUE here — unlike the per-grain workflows — because a superseded run is
+# redundant by definition. The run replacing it consolidates the same tables
+# plus whatever finished since.
+concurrency:
+  group: stage5-finals
+  cancel-in-progress: true
+
+jobs:
+  # Runs even when the triggering feed failed. The finals union whatever per-feed
+  # tables exist and log the absent ones, so a partial run publishes a truthful
+  # subset rather than blocking — the same philosophy the standalone FINAL
+  # workflows already follow.
+  final_core:
+    name: final - core
+    uses: "./.github/workflows/(stage5)master_capacity_final_core.yml"
+    secrets: inherit
+
+  final_locations:
+    name: final - locations
+    uses: "./.github/workflows/(stage5)master_capacity_final_locations.yml"
+    secrets: inherit
+
+  final_rates:
+    name: final - rates
+    uses: "./.github/workflows/(stage5)master_capacity_final_rates.yml"
+    secrets: inherit

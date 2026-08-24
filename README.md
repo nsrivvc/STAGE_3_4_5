@@ -333,9 +333,50 @@ gitignored.
 `run.py` is a plain batch command that reads all config from environment
 variables, which makes it portable to any runner without code changes.
 
-### Running more than one feed: use `all_sources(stage1-5).yml`
+### The FINAL tables run once, after the feeds
 
-**A multi-source run must be fired as ONE dispatch, not one per feed.**
+The three cross-feed FINAL tables UNION whichever per-feed master capacity
+tables exist, so they must run **once, after every feed has finished** — never
+once per feed.
+
+They used to run at the end of each `<feed>(stage3_4_5).yml`. Fine for one feed;
+broken for several. The FINAL workflows are guarded by the concurrency groups
+`stage5-final-core`, `-locations` and `-rates`, and GitHub keeps at most **one
+running plus one pending** request per group, so a third arrival evicts the
+queued one:
+
+```
+Canceling since a higher priority waiting request for stage5-final-rates exists
+```
+
+That cancelled job belonged to a feed's own run, so it cancelled that feed's
+entire run — exactly one feed, chosen by a race, which is why a three-source run
+failed a different source every time.
+
+Now the finals reach the same place by two paths, and neither can evict a feed:
+
+| How the feeds are triggered | Where the finals come from |
+|---|---|
+| Direct dispatch of `<feed>(stage3_4_5).yml` (one or several) | `finals(stage5).yml`, via `workflow_run` on completion |
+| `all_sources(stage1-5).yml` / `shipper_scope_apply.yml` | their own `final_*` jobs, after their feed jobs |
+
+`finals(stage5).yml` holds a single `stage5-finals` concurrency group with
+`cancel-in-progress: true`. Several feeds finishing together produce several runs
+of it, and the newest supersedes the rest — but that supersession happens between
+runs of *that* workflow, which no feed's run depends on. The survivor is the one
+triggered by the **last** feed to finish, so it consolidates after every feed's
+stage 5 is done.
+
+The two orchestrators call the feed workflows as **reusable workflows**, which
+emit no `workflow_run` event, so they don't double up.
+
+This also closes a correctness hazard the cancellations were masking: whichever
+finals call won the old race was not necessarily the last one, so it could
+consolidate while another feed's stage 5 was still running — publishing stale or
+missing rows and exiting green.
+
+**Multi-source runs** can still be fired as a single dispatch, which gives one
+run whose status covers everything:
 
 ```
 POST /repos/<owner>/<repo>/dispatches
@@ -343,31 +384,10 @@ POST /repos/<owner>/<repo>/dispatches
   "client_payload": { "sources": "firm,interruptible,awards" } }
 ```
 
-Each `<feed>(stage3_4_5).yml` ends by calling the three cross-feed FINAL
-workflows, which share the concurrency groups `stage5-final-core`, `-locations`
-and `-rates`. GitHub keeps at most **one running plus one pending** request per
-group, so firing three feeds at once means one finals call runs, one queues, and
-the third *evicts* the queued one:
+That is tidier, but no longer required — firing the three feed workflows
+separately now consolidates correctly too.
 
-```
-Canceling since a higher priority waiting request for stage5-final-core exists
-```
-
-That fails the evicted feed's entire run — exactly one feed, chosen by a race, so
-a three-source run failed a different source each time.
-
-`all_sources(stage1-5).yml` fixes it by fanning the feeds out with
-`run_finals: "false"`, waiting for all of them, then running the finals **once**.
-That also closes a correctness hazard the cancellations were masking: whichever
-finals call won the race was not necessarily the last one, so it could
-consolidate while another feed's stage 5 was still running — publishing stale or
-missing rows and exiting green.
-
-The per-feed `bronze-<feed>-loaded` dispatches still exist and still run the
-finals themselves, which is correct for **one** feed. Do not fire several of them
-at once; fire `run-pipeline` instead.
-
-**28 workflows.** Stages 3 and 4 split by source feed; stage 5 splits by feed
+**29 workflows.** Stages 3 and 4 split by source feed; stage 5 splits by feed
 *and* grain, one file per table. Each runs, logs, fails and uploads independently.
 
 | Stage | Files | Count | Runs |

@@ -22,26 +22,10 @@ name: interruptible (stage 3-4-5)
 # dispatch-triggered run also re-ingests first, which is idempotent.
 on:
   workflow_dispatch:
-  # Called by shipper_scope_apply.yml when the dashboard changes which
-  # shippers are attached, and by all_sources(stage1-5).yml when more than one
-  # feed runs together -- so a scope change or a multi-feed run replays this
-  # same chain rather than a second copy of it.
+  # Called by shipper_scope_apply.yml and by all_sources(stage1-5).yml, so a
+  # scope change or a multi-feed run replays this same chain rather than a
+  # second copy of it.
   workflow_call:
-    inputs:
-      run_finals:
-        description: >-
-          "false" to skip the three cross-feed FINAL tables at the end of this
-          chain. The finals consolidate whatever feeds exist, so they only ever
-          need to run ONCE. When several feeds run at the same time each one
-          calling them would collide on the stage5-final-* concurrency groups
-          -- one call runs, one queues, and any third evicts the queued one,
-          failing that feed's whole run. all_sources(stage1-5).yml therefore
-          passes "false" here and runs the finals itself, once, at the end.
-          Left unset (a direct dispatch, or a repository_dispatch) the finals
-          run as before.
-        required: false
-        type: string
-        default: "true"
   repository_dispatch:
     types: [bronze-interruptible-loaded]
 
@@ -86,26 +70,22 @@ jobs:
     secrets: inherit
 
   # The FINAL tables are cross-feed, so they wait for all three stage-5 jobs.
-  # `!cancelled()` rather than success() so one failing grain still lets the
-  # others consolidate, matching the standalone FINAL workflows.
 
-  final_core:
-    name: final - core
-    needs: [stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && inputs.run_finals != 'false' }}
-    uses: "./.github/workflows/(stage5)master_capacity_final_core.yml"
-    secrets: inherit
-
-  final_locations:
-    name: final - locations
-    needs: [stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && inputs.run_finals != 'false' }}
-    uses: "./.github/workflows/(stage5)master_capacity_final_locations.yml"
-    secrets: inherit
-
-  final_rates:
-    name: final - rates
-    needs: [stage5_core, stage5_locations, stage5_rates]
-    if: ${{ !cancelled() && inputs.run_finals != 'false' }}
-    uses: "./.github/workflows/(stage5)master_capacity_final_rates.yml"
-    secrets: inherit
+# THE FINAL TABLES ARE NOT RUN HERE. They are cross-feed: they consolidate
+# whichever per-feed tables exist, so they only ever need to run ONCE, after
+# every feed that is going to run has finished. Running them at the end of each
+# feed's chain meant several feeds firing together collided on the
+# stage5-final-* concurrency groups -- GitHub keeps one running plus one pending
+# request per group, so a third arrival evicted the queued one and cancelled
+# that feed's whole run ("Canceling since a higher priority waiting request for
+# stage5-final-rates exists").
+#
+# Instead:
+#   * a DIRECT run of this workflow (dashboard dispatch, repository_dispatch)
+#     triggers finals(stage5).yml on completion, which coalesces so that several
+#     feeds finishing together still consolidate exactly once;
+#   * all_sources(stage1-5).yml and shipper_scope_apply.yml call this workflow
+#     as a reusable workflow -- which emits NO workflow_run event -- and run the
+#     finals themselves, once, after every selected feed.
+#
+# Either way the finals run once, after the feeds, and nothing gets evicted.

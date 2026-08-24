@@ -108,8 +108,6 @@ jobs:
     needs: scope
     if: contains(format('{0},', needs.scope.outputs.sources), 'firm,')
     uses: "./.github/workflows/firm(stage3_4_5).yml"
-    with:
-      run_finals: "false"
     secrets: inherit
 
   interruptible:
@@ -117,8 +115,6 @@ jobs:
     needs: scope
     if: contains(format('{0},', needs.scope.outputs.sources), 'interruptible,')
     uses: "./.github/workflows/interruptible(stage3_4_5).yml"
-    with:
-      run_finals: "false"
     secrets: inherit
 
   awards:
@@ -126,8 +122,6 @@ jobs:
     needs: scope
     if: contains(format('{0},', needs.scope.outputs.sources), 'awards,')
     uses: "./.github/workflows/awards(stage3_4_5).yml"
-    with:
-      run_finals: "false"
     secrets: inherit
 
   # The FINAL tables, ONCE, after every re-scoped feed has rebuilt. Without this
