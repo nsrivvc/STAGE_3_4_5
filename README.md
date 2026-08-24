@@ -333,7 +333,41 @@ gitignored.
 `run.py` is a plain batch command that reads all config from environment
 variables, which makes it portable to any runner without code changes.
 
-**26 workflows.** Stages 3 and 4 split by source feed; stage 5 splits by feed
+### Running more than one feed: use `all_sources(stage1-5).yml`
+
+**A multi-source run must be fired as ONE dispatch, not one per feed.**
+
+```
+POST /repos/<owner>/<repo>/dispatches
+{ "event_type": "run-pipeline",
+  "client_payload": { "sources": "firm,interruptible,awards" } }
+```
+
+Each `<feed>(stage3_4_5).yml` ends by calling the three cross-feed FINAL
+workflows, which share the concurrency groups `stage5-final-core`, `-locations`
+and `-rates`. GitHub keeps at most **one running plus one pending** request per
+group, so firing three feeds at once means one finals call runs, one queues, and
+the third *evicts* the queued one:
+
+```
+Canceling since a higher priority waiting request for stage5-final-core exists
+```
+
+That fails the evicted feed's entire run — exactly one feed, chosen by a race, so
+a three-source run failed a different source each time.
+
+`all_sources(stage1-5).yml` fixes it by fanning the feeds out with
+`run_finals: "false"`, waiting for all of them, then running the finals **once**.
+That also closes a correctness hazard the cancellations were masking: whichever
+finals call won the race was not necessarily the last one, so it could
+consolidate while another feed's stage 5 was still running — publishing stale or
+missing rows and exiting green.
+
+The per-feed `bronze-<feed>-loaded` dispatches still exist and still run the
+finals themselves, which is correct for **one** feed. Do not fire several of them
+at once; fire `run-pipeline` instead.
+
+**28 workflows.** Stages 3 and 4 split by source feed; stage 5 splits by feed
 *and* grain, one file per table. Each runs, logs, fails and uploads independently.
 
 | Stage | Files | Count | Runs |

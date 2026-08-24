@@ -108,6 +108,8 @@ jobs:
     needs: scope
     if: contains(format('{0},', needs.scope.outputs.sources), 'firm,')
     uses: "./.github/workflows/firm(stage3_4_5).yml"
+    with:
+      run_finals: "false"
     secrets: inherit
 
   interruptible:
@@ -115,6 +117,8 @@ jobs:
     needs: scope
     if: contains(format('{0},', needs.scope.outputs.sources), 'interruptible,')
     uses: "./.github/workflows/interruptible(stage3_4_5).yml"
+    with:
+      run_finals: "false"
     secrets: inherit
 
   awards:
@@ -122,4 +126,31 @@ jobs:
     needs: scope
     if: contains(format('{0},', needs.scope.outputs.sources), 'awards,')
     uses: "./.github/workflows/awards(stage3_4_5).yml"
+    with:
+      run_finals: "false"
+    secrets: inherit
+
+  # The FINAL tables, ONCE, after every re-scoped feed has rebuilt. Without this
+  # each feed job would call them itself and they would evict each other on the
+  # stage5-final-* concurrency groups, failing one feed at random -- see
+  # all_sources(stage1-5).yml for the full explanation.
+  final_core:
+    name: final - core
+    needs: [firm, interruptible, awards]
+    if: ${{ !cancelled() }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_core.yml"
+    secrets: inherit
+
+  final_locations:
+    name: final - locations
+    needs: [firm, interruptible, awards]
+    if: ${{ !cancelled() }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_locations.yml"
+    secrets: inherit
+
+  final_rates:
+    name: final - rates
+    needs: [firm, interruptible, awards]
+    if: ${{ !cancelled() }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_rates.yml"
     secrets: inherit

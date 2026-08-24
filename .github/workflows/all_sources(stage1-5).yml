@@ -1,0 +1,142 @@
+name: all sources (stage 1-5)
+
+# THE ENTRY POINT FOR A MULTI-SOURCE RUN. The dashboard should fire THIS, once,
+# rather than firing the per-feed orchestrators separately.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# Each `<feed>(stage3_4_5).yml` ends by calling the three cross-feed FINAL
+# workflows, which are guarded by the concurrency groups `stage5-final-core`,
+# `-locations` and `-rates`. That is correct for ONE feed and broken for several:
+# GitHub keeps at most one running plus one pending request per concurrency
+# group, so three feeds firing at once means one finals call runs, one queues,
+# and the third EVICTS the queued one --
+#
+#     Canceling since a higher priority waiting request for stage5-final-core exists
+#
+# -- which fails that feed's entire run. Exactly one feed loses, and which one
+# is a race, so a three-source run failed a different source every time.
+#
+# The finals consolidate whatever per-feed tables exist, so running them per
+# feed was never necessary: they only need to run ONCE, after every selected
+# feed has finished. This workflow does that -- it fans the feeds out in
+# parallel with `run_finals: "false"`, waits for all of them, then runs the
+# three finals a single time.
+#
+# That also fixes a correctness hazard the cancellations were masking. Whichever
+# finals call survived the race was not necessarily the LAST one: it could
+# consolidate while another feed's stage 5 was still running, publishing that
+# feed's stale or missing rows and then exiting green. Here the finals cannot
+# start until every selected feed is done.
+#
+# HOW THE DASHBOARD FIRES IT
+# --------------------------
+#   POST /repos/<owner>/<repo>/dispatches
+#   { "event_type": "run-pipeline",
+#     "client_payload": { "sources": "firm,interruptible,awards" } }
+#
+# `sources` is a comma-separated list of the selected feeds, or "all". Omit it
+# and every feed runs.
+#
+# NOTE: Index of Customers is deliberately absent. `ioc` has an ingestion
+# workflow but NO stage 3, 4 or 5 transformations registered, so selecting it
+# lands rows in bronze.gindex and goes no further. Adding it here would produce
+# a green job that does nothing downstream.
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Comma-separated feeds to run: firm, interruptible, awards - or 'all'"
+        required: true
+        default: "all"
+
+  repository_dispatch:
+    types: [run-pipeline]
+
+# One multi-source run at a time. The called workflows keep their own per-stage
+# concurrency groups, which still apply underneath this.
+concurrency:
+  group: all-sources-end-to-end
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: resolve selected sources
+    runs-on: ubuntu-latest
+    outputs:
+      sources: ${{ steps.pick.outputs.sources }}
+    steps:
+      # workflow_dispatch puts the list in inputs; repository_dispatch puts it
+      # in client_payload. Neither present (or "all") means every feed.
+      - name: Resolve
+        id: pick
+        run: |
+          RAW="${{ github.event.inputs.sources || github.event.client_payload.sources || 'all' }}"
+          RAW="$(echo "$RAW" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$RAW" ] || [ "$RAW" = "all" ]; then
+            RAW="firm,interruptible,awards"
+          fi
+          echo "sources=$RAW" >> "$GITHUB_OUTPUT"
+          echo "Feeds selected: $RAW"
+          case "$RAW" in
+            *ioc*|*index*)
+              echo "::warning::'ioc' has no stage 3-5 transformations - it is ignored here." ;;
+          esac
+
+  # One gated job per feed. Each runs its own full ingest -> 3 -> 4 -> 5 chain,
+  # WITHOUT the finals. Nothing about those chains is duplicated here: editing a
+  # feed's own .yml changes what this runs too.
+  firm:
+    name: firm
+    needs: resolve
+    if: contains(format('{0},', needs.resolve.outputs.sources), 'firm,')
+    uses: "./.github/workflows/firm(stage3_4_5).yml"
+    with:
+      run_finals: "false"
+    secrets: inherit
+
+  interruptible:
+    name: interruptible
+    needs: resolve
+    if: contains(format('{0},', needs.resolve.outputs.sources), 'interruptible,')
+    uses: "./.github/workflows/interruptible(stage3_4_5).yml"
+    with:
+      run_finals: "false"
+    secrets: inherit
+
+  awards:
+    name: awards
+    needs: resolve
+    if: contains(format('{0},', needs.resolve.outputs.sources), 'awards,')
+    uses: "./.github/workflows/awards(stage3_4_5).yml"
+    with:
+      run_finals: "false"
+    secrets: inherit
+
+  # The FINAL tables, ONCE, after every selected feed has finished.
+  #
+  # `!cancelled()` rather than success() so that an unselected feed (skipped) or
+  # one failing feed still lets the others consolidate -- matching how the
+  # finals behave standalone. They union whatever per-feed tables exist and name
+  # the absent ones in the log, so a partial run publishes a truthful subset
+  # rather than blocking.
+  final_core:
+    name: final - core
+    needs: [firm, interruptible, awards]
+    if: ${{ !cancelled() }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_core.yml"
+    secrets: inherit
+
+  final_locations:
+    name: final - locations
+    needs: [firm, interruptible, awards]
+    if: ${{ !cancelled() }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_locations.yml"
+    secrets: inherit
+
+  final_rates:
+    name: final - rates
+    needs: [firm, interruptible, awards]
+    if: ${{ !cancelled() }}
+    uses: "./.github/workflows/(stage5)master_capacity_final_rates.yml"
+    secrets: inherit
