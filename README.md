@@ -1,4 +1,4 @@
-# Silver Staging (Stages 3–5)
+# Stages 1 - 5
 
 A modular batch system that reads **Bronze** tables from a data source, applies
 transformation logic, and writes curated **Silver** tables. This repo handles
