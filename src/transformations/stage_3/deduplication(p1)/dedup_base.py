@@ -209,6 +209,22 @@ class NestedArrayDeduplication(SilverTransformation):
         """
 
     # ------------------------------------------------------------ transform
+    def _section_expr(self) -> str:
+        """The nested array, found CASE-INSENSITIVELY in `raw_payload`.
+
+        `raw_payload` preserves the producer's original keys verbatim, and
+        producers disagree on case: the mock fixtures ship `locations` /
+        `rates`, the live NatGasHub export ships `Locations` / `Rates`. A plain
+        `raw_payload -> 'locations'` silently matches nothing against the
+        latter -- contracts would land in Bronze and then produce ZERO location
+        and rate rows, with no error anywhere. That is the worst kind of
+        failure, so the lookup matches on lower(key) instead.
+        """
+        return (
+            "(SELECT v FROM jsonb_each(s.raw_payload) AS e(k, v) "
+            f"WHERE lower(e.k) = '{self.section.lower()}' LIMIT 1)"
+        )
+
     def transform_sql(self) -> str:
         select_parts = (
             ["s.bronze_row_id"]
@@ -236,8 +252,8 @@ class NestedArrayDeduplication(SilverTransformation):
         SELECT
             {sel}
         FROM {self.source_schema}.{self.source_table} s
-        CROSS JOIN LATERAL jsonb_array_elements(s.raw_payload -> '{self.section}') AS el
-        WHERE jsonb_typeof(s.raw_payload -> '{self.section}') = 'array'
+        CROSS JOIN LATERAL jsonb_array_elements({self._section_expr()}) AS el
+        WHERE jsonb_typeof({self._section_expr()}) = 'array'
         -- Shipper scope, evaluated against the PARENT contract row: the DUNS
         -- lives on the contract, not inside a location/rate element, so an
         -- out-of-scope contract contributes no elements at all.

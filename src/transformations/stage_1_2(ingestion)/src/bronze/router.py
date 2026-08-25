@@ -27,7 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator, List, Optional
 
-from . import coerce, validators
+from . import coerce, feeds, validators
 
 
 @dataclass
@@ -55,44 +55,19 @@ class FeedSpec:
 # (plus the full original record in raw_payload). Exploding them into
 # location/rate rows is the Silver layer's job.
 FEED_REGISTRY: Dict[str, FeedSpec] = {
-    "gTRAN_FIRM": FeedSpec(
-        feed_type="gTRAN_FIRM",
-        records_key="contracts",
-        parent_table="gtran_firm",
-        parent_id_field="Id",
-        parent_required=["Id", "FirmId"],
-        header_keys=["TspName", "TspDuns", "TspProp"],
-        children=[],
-    ),
-    "gTRAN_IT": FeedSpec(
-        feed_type="gTRAN_IT",
-        records_key="contracts",
-        parent_table="gtran_it",
-        parent_id_field="Id",
-        parent_required=["Id", "InterruptibleId"],
-        header_keys=["TspName", "TspDuns", "TspProp"],
-        children=[],
-    ),
-    "gINDEX": FeedSpec(
-        feed_type="gINDEX",
-        records_key="records",
-        parent_table="gindex",
-        parent_id_field="ID",
-        parent_required=["ID", "Pipe"],
-        header_keys=[],
-        children=[],
-    ),
-    # Capacity-release awards. No TSP header at the payload level — each award
-    # carries its own TSP fields.
-    "gAWD": FeedSpec(
-        feed_type="gAWD",
-        records_key="awards",
-        parent_table="gawd",
-        parent_id_field="Id",
-        parent_required=["Id", "AwardNumber"],
-        header_keys=[],
-        children=[],
-    ),
+    f.feed_type: FeedSpec(
+        feed_type=f.feed_type,
+        records_key=f.records_keys[0],
+        parent_table=f.table,
+        parent_id_field=f.parent_id_field,
+        parent_required=list(f.parent_required),
+        header_keys=list(f.header_keys),
+        children=[
+            ChildSpec(c.array_key, c.table, c.id_field, list(c.required), list(c.inherit))
+            for c in f.children
+        ],
+    )
+    for f in feeds.FEEDS
 }
 
 
@@ -128,7 +103,9 @@ def route(payload: Dict[str, Any], feed_type: str) -> Iterator[RoutedRecord]:
 
     header = {k: payload[k] for k in spec.header_keys if k in payload}
     # Record lists and child arrays may arrive native or as embedded JSON text.
-    records = coerce.as_record_list(payload.get(spec.records_key))
+    # Envelope keys vary by producer (the fixture's "contracts" vs the live
+    # export's "Firms"), so the feed decides which one holds its records.
+    records = coerce.as_record_list(feeds.for_feed_type(feed_type).records_from(payload))
 
     for raw in records:
         record = dict(raw)

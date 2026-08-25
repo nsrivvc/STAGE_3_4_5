@@ -30,132 +30,21 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from . import feeds
+
 # ---------------------------------------------------------------------------
 # Business columns per Bronze table (verbatim from the spreadsheet).
 # (db_column is always source_key.lower(); declared_type is the sheet's type,
 #  retained only as documentation since Bronze lands everything as TEXT.)
 # ---------------------------------------------------------------------------
 
+# Per-feed column lists now live one-module-per-feed in bronze/feeds/. This
+# dict is assembled from them so every existing caller keeps working unchanged,
+# and so a new feed needs no edit here at all.
+#
 # Each entry: (source_json_key, declared_type)
 BUSINESS_COLUMNS: Dict[str, List[tuple]] = {
-    "gtran_firm": [
-        ("Id", "varchar"), ("TspName", "varchar"), ("TspDuns", "int"),
-        ("TspProp", "varchar"), ("PostedDateTime", "datetime"), ("FirmId", "varchar"),
-        ("Cycle", "varchar"), ("AmendRptg", "varchar"), ("AmendRptgDesc", "varchar"),
-        ("KHolderName", "varchar"), ("KHolder", "int"), ("KHolderProp", "varchar"),
-        ("SvcReqK", "varchar"), ("RateSch", "varchar"), ("KQtyK", "int"),
-        ("KStat", "varchar"), ("KStatDesc", "varchar"), ("KBegDateTime", "datetime"),
-        ("KEndDateTime", "datetime"), ("KEndInd", "varchar"), ("NgtdRateInd", "varchar"),
-        ("NgtdRateIndDesc", "varchar"), ("PkgId", "varchar"), ("KRoll", "varchar"),
-        ("KRollDesc", "varchar"), ("Affil", "varchar"), ("AffilDesc", "varchar"),
-        ("CapType", "varchar"), ("CapTypeName", "varchar"), ("CapTypeLoc", "varchar"),
-        ("CapTypeLocDesc", "varchar"), ("OSId", "varchar"), ("Rte", "varchar"),
-        ("TermsNotes", "varchar"), ("CreatedDateTime", "datetime"), ("RecLocs", "varchar"),
-        ("DelLocs", "varchar"), ("MaxRateChgd", "varchar"), ("MaxTrfRate", "varchar"),
-        ("OtherRates", "varchar"), ("OtherRatesDescription", "varchar"),
-        ("OtherRatesBasis", "varchar"),
-        # nested arrays, landed as canonical JSON text (exploded in Silver)
-        ("locations", "json"), ("rates", "json"),
-    ],
-    "gtran_it": [
-        ("Id", "varchar"), ("TspName", "varchar"), ("TspDuns", "int"),
-        ("TspProp", "varchar"), ("PostedDateTime", "datetime"),
-        ("InterruptibleId", "varchar"), ("Cycle", "varchar"), ("AmendRptg", "varchar"),
-        ("AmendRptgDesc", "varchar"), ("KHolderName", "varchar"), ("KHolder", "int"),
-        ("KHolderProp", "varchar"), ("SvcReqK", "varchar"), ("RateSch", "varchar"),
-        ("ITQtyK", "int"), ("KStat", "varchar"), ("KStatDesc", "varchar"),
-        ("KBegDateTime", "datetime"), ("KEndDateTime", "datetime"),
-        ("NgtdRateInd", "varchar"), ("NgtdRateIndDesc", "varchar"), ("PkgId", "varchar"),
-        ("KRoll", "varchar"), ("KRollDesc", "varchar"), ("Affil", "varchar"),
-        ("AffilDesc", "varchar"), ("TermsNotes", "varchar"),
-        ("CreatedDateTime", "datetime"), ("RecLocs", "varchar"), ("DelLocs", "varchar"),
-        ("MaxRateChgd", "varchar"), ("MaxTrfRate", "varchar"), ("OtherRates", "varchar"),
-        ("OtherRatesDescription", "varchar"), ("OtherRatesBasis", "varchar"),
-        ("DealType", "varchar"),
-        # nested arrays, landed as canonical JSON text (exploded in Silver)
-        ("locations", "json"), ("rates", "json"),
-    ],
-    "gindex": [
-        ("ID", "int"), ("FercID", "varchar"), ("Pipe", "varchar"),
-        ("ReportDate", "datetime"), ("OrigRevised", "int"), ("TporUOM", "varchar"),
-        ("StorUOM", "varchar"), ("Contact", "varchar"), ("ContactNumber", "varchar"),
-        ("Shipper", "varchar"), ("ShipperDuns", "int"), ("RateSched", "varchar"),
-        ("K", "varchar"), ("KStart", "date"), ("KExp", "date"), ("NegRate", "varchar"),
-        ("TportMDQ", "int"), ("StorMSQ", "int"), ("AgentAMA", "varchar"),
-        ("AgentAMAAffiliation", "varchar"), ("PtIDCode", "varchar"), ("PtName", "varchar"),
-        ("PtIDCodeQual", "varchar"), ("PtIdenCode", "int"), ("Zone", "varchar"),
-        ("LocTportMDQ", "int"), ("LocStorMSQ", "int"), ("CreatedDate", "datetime"),
-        ("RateSchedID", "int"), ("State", "varchar"), ("County", "varchar"),
-        ("DUNPCE", "int"),
-    ],
-    # Capacity-release awards feed. NOT in the source spreadsheet — these
-    # columns are derived from the union of keys in data/awards_test.json
-    # (one row per award, plus nested location/rate arrays like the gTRAN
-    # feeds). Regenerate if the source layout changes.
-    "gawd": [
-        ("GS_ID", "int"), ("Id", "varchar"),
-        ("TransportationServiceProviderName", "varchar"),
-        ("TransportationServiceProviderPropCode", "varchar"), ("Status", "varchar"),
-        ("StatusCodeValue", "varchar"), ("OfferNumber", "varchar"),
-        ("BidNumber", "varchar"), ("AwardNumber", "varchar"),
-        ("AwardQuantityContract", "varchar"),
-        ("IBRIndexBasedCapacityReleaseIndicator", "varchar"),
-        ("IBRIndexBasedCapacityReleaseIndicatorCodeValue", "varchar"),
-        ("RecallReputIndicator", "varchar"),
-        ("RecallReputIndicatorCodeValue", "varchar"),
-        ("AllowableReleaseIndicator", "varchar"), ("AffiliatedIndicator", "varchar"),
-        ("AffiliatedIndicatorCodeValue", "varchar"),
-        ("RightToAmendPrimaryPointsIndicator", "varchar"),
-        ("RightToAmendPrimaryPointsIndicatorCodeValue", "varchar"),
-        ("REI_AwardingAction", "varchar"), ("REI_StorageInventoryCondition", "varchar"),
-        ("CapacityAwardDateTime", "datetime"), ("ReleaseTermStartDate", "datetime"),
-        ("ReleaseTermEndDate", "datetime"), ("PostDateTime", "datetime"),
-        ("MarketBasedRateIndicator", "varchar"),
-        ("MarketBasedRateIndicatorCodeValue", "varchar"),
-        ("PrearrangedDealIndicator", "varchar"),
-        ("PrearrangedDealIndicatorCodeValue", "varchar"),
-        ("PreviouslyReleasedIndicator", "varchar"),
-        ("PreviouslyReleasedIndicatorCodeValue", "varchar"),
-        ("PermanentReleaseIndicator", "varchar"),
-        ("PermanentReleaseIndicatorCodeValue", "varchar"),
-        ("ReplacementShipperRoleIndicator", "varchar"),
-        ("ReplacementShipperRoleIndicatorCodeValue", "varchar"),
-        ("StorageInventoryConditionedReleaseIndicator", "varchar"),
-        ("StorageInventoryConditionedReleaseIndicatorCodeValue", "varchar"),
-        ("OverrunResponsibilityIndicator", "varchar"),
-        ("OverrunResponsibilityIndicatorCodeValue", "varchar"),
-        ("BusinessDayIndicator", "varchar"), ("BidderName", "varchar"),
-        ("BidderDuns", "int"), ("ReleaserName", "varchar"), ("ReleaserDuns", "int"),
-        ("BidderPhoneNumber", "varchar"), ("BidderEmailAddress", "varchar"),
-        ("RateFormTypeCode", "varchar"), ("RateFormTypeCodeValue", "varchar"),
-        ("ReservationRateBasis", "varchar"),
-        ("ReservationRateBasisCodeValue", "varchar"), ("RateSchedule", "varchar"),
-        ("UnitPrice", "varchar"), ("Multiplier", "varchar"),
-        ("MonetaryAmount", "varchar"),
-        ("ReleaseDesignationAcceptableBiddingBasis", "varchar"),
-        ("ReleaseDesignationAcceptableBiddingBasisCodeValue", "varchar"),
-        ("SurchargeIndicator", "varchar"), ("SurchargeIndicatorCodeValue", "varchar"),
-        ("ChargeIndicator", "varchar"), ("CycleIndicator", "varchar"),
-        ("CycleIndicatorCodeValue", "varchar"), ("IBRFormulaIdentifier", "varchar"),
-        ("IBRFormulaIdentifierCodeValue", "varchar"),
-        ("IBRIndexMathematicalOperatorIndicator", "varchar"),
-        ("IBRIndexMathematicalOperatorIndicatorCodeValue", "varchar"),
-        ("IBRIndexReference1", "varchar"), ("IBRIndexReference2", "varchar"),
-        ("IBRUniqueFormulaSpecialTerms", "varchar"),
-        ("IBRVariableMathematicalOperatorIndicator", "varchar"),
-        ("ReplacementShipperContractNumber", "varchar"),
-        ("AgencyQualifierCode", "varchar"), ("RecallReputTermRate", "varchar"),
-        ("RightToAmendPrimaryPointsTermsNote", "varchar"),
-        ("SpecialTermsAndMiscellaneousNotesAndObligations", "varchar"),
-        ("SpecialTermsAndMiscellaneousNotesStorageInventoryConditions", "varchar"),
-        ("SpecialTermsAndMiscellaneousNotes", "varchar"),
-        ("MeasurementBasis", "varchar"), ("MeasurementBasisCodeValue", "varchar"),
-        ("CreatedDate", "datetime"), ("ReleaserContractNumber", "varchar"),
-        ("ReleaseFullName", "varchar"), ("BidderFullName", "varchar"),
-        ("Version_Status", "varchar"), ("UpdatedDateTime", "datetime"),
-        # nested arrays, landed as canonical JSON text (exploded in Silver)
-        ("locations", "json"), ("rates", "json"),
-    ],
+    feed.table: list(feed.columns) for feed in feeds.FEEDS
 }
 
 # ---------------------------------------------------------------------------
@@ -190,8 +79,13 @@ def all_db_columns(table: str) -> List[str]:
 
 
 def source_key_map(table: str) -> Dict[str, str]:
-    """Map lowercased-source-key -> db column, for case-insensitive matching."""
-    return {src.lower(): src.lower() for src, _ in BUSINESS_COLUMNS[table]}
+    """Map lowercased-source-key -> db column, for case-insensitive matching.
+
+    Includes the feed's ALIASES, so a producer that spells a field differently
+    (live NatGasHub `KQty` vs the fixture's `KQtyK`) resolves to the same
+    column with no special-casing in the transformer.
+    """
+    return feeds.for_table(table).source_key_map
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +122,21 @@ def generate_table_ddl(table: str) -> str:
         f"CREATE INDEX IF NOT EXISTS {_q('ix_' + table + '_recid')} "
         f"ON {SCHEMA_NAME}.{_q(table)} (raw_record_id);"
     )
+    # ---- forward migration for a table that already exists -----------------
+    # CREATE TABLE IF NOT EXISTS is a no-op once the table is there, so a column
+    # added to a feed later would never reach an existing database and the
+    # writer's INSERT would fail on the missing column. ADD COLUMN IF NOT EXISTS
+    # closes that: new business columns appear on the next ingest, and the
+    # statement is a no-op for every column already present.
+    #
+    # Only ever ADDITIVE. A column removed from a feed definition is left in
+    # place rather than dropped -- dropping one destroys landed data, which is a
+    # deliberate migration, not something an ingest should do on its own.
+    for src, _declared in BUSINESS_COLUMNS[table]:
+        lines.append(
+            f"ALTER TABLE {SCHEMA_NAME}.{_q(table)} "
+            f"ADD COLUMN IF NOT EXISTS {_q(src.lower())} TEXT;"
+        )
     return "\n".join(lines)
 
 
