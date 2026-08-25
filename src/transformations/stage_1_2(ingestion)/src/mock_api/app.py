@@ -77,7 +77,7 @@ def health():
 
 @app.get("/api/firms")
 def get_firms():
-    return load_fixture("firms_test.json")
+    return load_fixture("firm_sample_worklow.json")
 
 
 @app.get("/api/interruptibles")
