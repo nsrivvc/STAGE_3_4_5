@@ -485,6 +485,50 @@ The FINAL tables always run at the end of the chain: they consolidate whatever
 feeds currently sit in Silver, so a firm-only run rebuilds them from firm's
 fresh rows plus whatever the other feeds last left behind.
 
+### Stage 2 on its own: a JSON file -> its raw table
+
+[`src/transformations/stage_2/`](src/transformations/stage_2/) is stage 2 with
+nothing else attached — no API, no Parquet, no Silver logic, no deduplication
+(that is stage 3's `deduplication(p1)` phase). Give it a JSON file and it
+writes the records into the matching raw table. Five files, one per feed plus
+the loader that drives them:
+
+| file | holds |
+|---|---|
+| `json_to_raw.py` | the loader and its CLI — the only file with logic in it |
+| `firm.py` | gTRAN_FIRM -> `bronze.gtran_firm` |
+| `interruptible.py` | gTRAN_IT -> `bronze.gtran_it` |
+| `awards.py` | gAWD -> `bronze.gawd` |
+| `ioc.py` | gINDEX -> `bronze.gindex` |
+
+A feed module is a short list of declarations, no code: the envelope its
+records arrive under, which key is the record id, which fields are required,
+and any field the export spells differently from its column (`KQty` fills
+`kqtyk`). Adding a feed is one more file plus one line in `FEEDS`.
+
+Run it with [`(stage2)json_to_raw.yml`](.github/workflows/(stage2)json_to_raw.yml)
+(inputs: `file`, `feed`, `dry_run`) or directly:
+
+```powershell
+python "src\transformations\stage_2\json_to_raw.py" --file "src\transformations\stage_1_2(ingestion)\data\firm_sample_worklow.json"
+python "src\transformations\stage_2\json_to_raw.py" --file <path> --feed ioc --dry-run
+```
+
+**The database owns the schema.** The loader reads the target table's columns
+from `information_schema` instead of declaring them, so it cannot drift from
+what is actually in Neon: a column added there is populated on the next run,
+and a JSON key with nowhere to land is reported rather than dropped (it is
+still kept in full in `raw_payload`). It needs the raw table to exist — it
+writes into the Bronze tables, it does not create them.
+
+Every row is stamped with `hash_key`, the content fingerprint stage 3's
+deduplication compares rows on, and the raw tables carry `UNIQUE (hash_key)` —
+so a repeat load skips records already there instead of failing.
+
+This overlaps `bronze_ingest_*.yml` on purpose. Those run stage 1 **and** 2
+together (fetch from the mock API, then load); this one is the load half by
+itself, for when the JSON already exists.
+
 For schedulers:
 
 - **Azure Container Apps job** — build a small image (`python:3.11-slim`,

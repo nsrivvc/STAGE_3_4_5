@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Dict, Tuple
 
 from . import awards, firm, index, interruptible
-from .spec import ChildSpec, FeedDefinition
+from .spec import FeedDefinition
 
 #: Every feed the ingestion knows about. Order is the order they appear in
 #: generated DDL and in `--list`-style output.
@@ -65,6 +65,6 @@ def for_feed_type(feed_type: str) -> FeedDefinition:
 
 
 __all__ = [
-    "FEEDS", "BY_FEED_TYPE", "BY_TABLE", "FeedDefinition", "ChildSpec",
+    "FEEDS", "BY_FEED_TYPE", "BY_TABLE", "FeedDefinition",
     "feed_types", "tables", "for_table", "for_feed_type",
 ]

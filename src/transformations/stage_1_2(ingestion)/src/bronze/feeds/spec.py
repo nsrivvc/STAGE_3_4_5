@@ -36,24 +36,7 @@ nothing. Anything still unrecognised is not lost: it stays in `raw_payload`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Mapping, Sequence, Tuple
-
-
-@dataclass(frozen=True)
-class ChildSpec:
-    """A nested array fanned out into its own Bronze table.
-
-    Unused today -- every feed lands as ONE Bronze row per record, with nested
-    locations/rates kept on the row (as JSON text columns and inside
-    raw_payload) and exploded in Silver by stage 3. Kept because the router
-    still supports it and a future feed may need it.
-    """
-
-    array_key: str
-    table: str
-    id_field: str
-    required: Sequence[str] = ()
-    inherit: Sequence[str] = ()
+from typing import Dict, List, Mapping, Tuple
 
 
 @dataclass(frozen=True)
@@ -90,8 +73,6 @@ class FeedDefinition:
     #: Nested array sections carried on the row and exploded in Silver. Declared
     #: so a feed can state them once; stage 3 finds them case-insensitively.
     nested_sections: Tuple[str, ...] = ()
-
-    children: Tuple[ChildSpec, ...] = ()
 
     # ------------------------------------------------------------------ views
     @property

@@ -27,8 +27,8 @@ class BronzeWriter(ABC):
     """Database-agnostic contract used by the ingestion pipeline."""
 
     @abstractmethod
-    def ensure_schema(self, ddl: str) -> None:
-        """Create the Bronze schema/tables if they do not already exist."""
+   # def ensure_schema(self, ddl: str) -> None:
+     #   """Create the Bronze schema/tables if they do not already exist."""
 
     @abstractmethod
     def write_rows(self, table: str, rows: List[Dict[str, Any]]) -> int:

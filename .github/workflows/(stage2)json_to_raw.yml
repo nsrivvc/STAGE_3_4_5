@@ -1,0 +1,121 @@
+name: (stage2)json-to-raw
+
+# Stage 2 and nothing else: take one JSON file and write it into its raw table
+# (src/transformations/stage_2/json_to_raw.py).
+#
+# ONE WORKFLOW FOR EVERY FEED, unlike stages 3-5. Those split per feed because
+# each feed runs different transformations; stage 2 runs the same code for all
+# four -- the per-feed differences live in stage_2/firm.py, interruptible.py,
+# awards.py and ioc.py, and the columns come from the database. A per-feed copy
+# of this file would differ only in two input values, so pass them instead:
+#
+#   feed: firm | interruptible | awards | ioc  -> bronze.gtran_firm / gtran_it
+#                                                 / gawd / gindex
+#   file: whichever JSON to load
+#
+# The default file is the committed firm sample, so a plain "Run workflow" does
+# something useful with no arguments. Point `file` at stage 1's output
+# (data/_fetched_firms.json) to load a freshly fetched feed instead.
+#
+# Re-running is safe: the raw tables carry UNIQUE (hash_key), so a repeat load
+# skips records already there rather than raising.
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "Path to the JSON file (repo-relative)"
+        required: true
+        default: "src/transformations/stage_1_2(ingestion)/data/firm_sample_worklow.json"
+      feed:
+        description: "Target feed ('auto' identifies it from the file itself)"
+        required: true
+        default: "firm"
+        type: choice
+        options:
+          - firm
+          - interruptible
+          - awards
+          - ioc
+          - auto
+      dry_run:
+        description: "Convert and report without writing anything"
+        required: false
+        default: false
+        type: boolean
+
+  # Callable from an orchestrator, so a feed's chain can run stage 2 without a
+  # second copy of this definition.
+  workflow_call:
+    inputs:
+      file:
+        required: false
+        type: string
+        default: "src/transformations/stage_1_2(ingestion)/data/firm_sample_worklow.json"
+      feed:
+        required: false
+        type: string
+        default: "firm"
+      dry_run:
+        required: false
+        type: boolean
+        default: false
+
+# Per feed, so the feeds never block each other but a run never collides with
+# itself mid-write.
+concurrency:
+  group: stage2-${{ inputs.feed }}
+  cancel-in-progress: false
+
+jobs:
+  load:
+    name: json -> raw table
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Neon connection string
+      SOURCE_SYSTEM: NatGasHub
+      TRIGGERED_BY: github-actions
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # The root requirements already carry the driver (psycopg2-binary) and
+      # python-dotenv, which is all stage 2 needs.
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Fails fast if the secret was never set, instead of falling through to a
+      # confusing "connection to server at localhost refused".
+      - name: Check DATABASE_URL is set
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set for this repository."
+            exit 1
+          fi
+
+      - name: Check the input file exists
+        run: |
+          if [ ! -f "${{ inputs.file }}" ]; then
+            echo "::error::input file not found: ${{ inputs.file }}"
+            exit 1
+          fi
+          echo "loading $(wc -c < "${{ inputs.file }}") bytes from ${{ inputs.file }}"
+
+      # --feed is omitted for 'auto' so the script identifies the feed from the
+      # payload itself. Built as an array because the sample path contains
+      # parentheses, and because "[ cond ] && ARGS+=..." would exit non-zero on
+      # a false condition and fail the step under bash -e.
+      - name: Write JSON to its raw table
+        run: |
+          ARGS=(--file "${{ inputs.file }}")
+          if [ "${{ inputs.feed }}" != "auto" ]; then
+            ARGS+=(--feed "${{ inputs.feed }}")
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+          python "src/transformations/stage_2/json_to_raw.py" "${ARGS[@]}"
