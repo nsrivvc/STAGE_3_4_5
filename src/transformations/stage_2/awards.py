@@ -12,6 +12,10 @@ text on the row for stage 3 to fan out.
 
 NAME = "gAWD"
 TABLE = "gawd"
+#: Pipeline freshness marker (fresh -> processed). Named record_status here
+#: because gawd already has a business column "status" -- the award's own
+#: status from the JSON -- which stage 3 reads and must not be overwritten.
+STATUS_COLUMN = "record_status"
 FILE_WORDS = ("award", "awards")
 RECORD_KEYS = ("Awards", "awards")
 ID_FIELD = "Id"

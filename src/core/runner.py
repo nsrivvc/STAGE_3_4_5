@@ -27,7 +27,7 @@ from ..db.connection import get_engine, table_exists
 if TYPE_CHECKING:  # for type hints only; keeps pyarrow out of the import path
     from ..parquet_export import ExportContext
 from ..logging_config import get_logger
-from .base import SilverTransformation
+from .base import PipelineTransformation
 from .registry import REGISTRY
 
 # Importing the transformations package triggers auto-discovery (it imports
@@ -46,7 +46,7 @@ class Result:
     error: str = ""
 
 
-def group_of(t: SilverTransformation) -> str:
+def group_of(t: PipelineTransformation) -> str:
     """The folder path a transformation lives in, or "" for a top-level module.
 
     src.transformations.stage_4.rec_del_pairing.silver_firm_rec_del_pair
@@ -86,7 +86,7 @@ def _in_group(path: str, group: str) -> bool:
     return any(have[i:i + len(want)] == want for i in range(len(have) - len(want) + 1))
 
 
-def source_of(t: SilverTransformation) -> str:
+def source_of(t: PipelineTransformation) -> str:
     """Canonical JSON source feed for a transformation ("firm", "ioc", ...).
 
     Anything cross-feed or undeclared resolves to "_combined".
@@ -124,12 +124,12 @@ def list_groups() -> List[str]:
     return sorted({g for g in (group_of(t) for t in REGISTRY.values()) if g})
 
 
-def _check_dependencies(conn, t: SilverTransformation) -> List[str]:
+def _check_dependencies(conn, t: PipelineTransformation) -> List[str]:
     """Return the list of missing source tables (empty == all present).
 
     Sources are looked up in `t.source_schema`, which is Bronze for a plain
     Bronze -> Silver transformation but a later stage for transformations that
-    build on one (see SilverTransformation.source_schema).
+    build on one (see PipelineTransformation.source_schema).
     """
     if not t.sources_required:
         return []   # transformation adapts to whichever sources exist
@@ -140,12 +140,12 @@ def _check_dependencies(conn, t: SilverTransformation) -> List[str]:
     return missing
 
 
-def _silver_table_exists(conn, t: SilverTransformation) -> bool:
+def _silver_table_exists(conn, t: PipelineTransformation) -> bool:
     """True if this transformation's target table has already been created."""
     return table_exists(conn, t.target_schema, t.table_name)
 
 
-def _export_context(t: SilverTransformation, ctx: "ExportContext | None"):
+def _export_context(t: PipelineTransformation, ctx: "ExportContext | None"):
     """Per-transformation export context, or None when export is off.
 
     Stage folder is whatever PARQUET_STAGE says (the workflows set it, so each

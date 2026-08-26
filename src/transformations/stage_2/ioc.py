@@ -11,6 +11,8 @@ Called IOC in the workflows and gINDEX in the payloads; both names reach it
 
 NAME = "gINDEX"
 TABLE = "gindex"
+#: IOC skips the staging phases, so it carries no freshness marker.
+STATUS_COLUMN = None
 FILE_WORDS = ("ioc", "index")
 RECORD_KEYS = ("Records", "records", "IndexOfCustomers")
 ID_FIELD = "ID"

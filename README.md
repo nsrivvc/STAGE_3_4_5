@@ -62,7 +62,7 @@ src/
   logging_config.py           logging setup (stdout)
   db/connection.py            SQLAlchemy engine factory (the only driver-aware file)
   core/
-    base.py                   SilverTransformation base class (the shared pattern)
+    base.py                   PipelineTransformation base class (the shared pattern)
     registry.py               @register decorator + REGISTRY
     runner.py                 run one / group / all: per-table transaction, checks, logging
     inspect.py                read-only Bronze/Silver snapshot + readiness
@@ -87,7 +87,7 @@ src/
 Folders are named `stage_3` / `stage_4` / `stage_5`, not `stage 3`, because they
 are imported as Python packages.
 
-- **One file per Silver table.** Each subclasses `SilverTransformation` and
+- **One file per Silver table.** Each subclasses `PipelineTransformation` and
   provides `table_name`, `create_table_sql()`, and `transform_sql()`.
 - **Per-table transactions.** The runner runs each transformation in its own
   `engine.begin()` block, so a failure rolls back cleanly and doesn't stop the
@@ -529,9 +529,9 @@ and a JSON key with nowhere to land is reported rather than dropped (it is
 still kept in full in `raw_payload`). It needs the raw table to exist — it
 writes into the Bronze tables, it does not create them.
 
-Every row is stamped with `hash_key`, the content fingerprint stage 3's
-deduplication compares rows on. Bronze keeps every load, duplicates included —
-stage 3's deduplication(p1) is the one place duplicate content is dropped.
+Bronze keeps every load, duplicates included. Stage 3's deduplication(p1)
+is the one place duplicate rows are dropped, by comparing the rows' own data
+fields — nothing in stages 1-2 takes part in that decision.
 
 This overlaps `bronze_ingest_*.yml` on purpose. Those run stage 1 **and** 2
 together (fetch from the mock API, then load); this one is the load half by

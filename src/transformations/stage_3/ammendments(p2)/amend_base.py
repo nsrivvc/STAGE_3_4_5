@@ -62,10 +62,10 @@ from __future__ import annotations
 
 from typing import List
 
-from ....core.base import SilverTransformation
+from ....core.base import PipelineTransformation
 
 
-class ContractAmendments(SilverTransformation):
+class ContractAmendments(PipelineTransformation):
     # --- set these in each subclass ------------------------------------------
     feed: str = ""              # "firm" | "interruptible"
     source_table: str = ""      # deduplication(p1) output holding contract headers

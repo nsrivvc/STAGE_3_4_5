@@ -46,7 +46,7 @@ Two things worth settling before writing any of this:
 
 TO ADD ONE
 ----------
-Drop a module in the relevant folder with a @register-ed SilverTransformation
+Drop a module in the relevant folder with a @register-ed PipelineTransformation
 subclass. The parent package discovers subfolders recursively, so no imports are
 needed here. See ../../stage_4/rec_del_pairing/ for a multi-type component sharing one base
 class, or ../../silver_firm_transport_rate.py for a standalone one.

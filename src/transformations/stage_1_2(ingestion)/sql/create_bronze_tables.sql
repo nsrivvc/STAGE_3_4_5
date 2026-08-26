@@ -1,4 +1,4 @@
--- Auto-generated from src/bronze/schemas.py — do not hand-edit.
+-- Auto-generated from src/bronze/schemas.py â€” do not hand-edit.
 -- Regenerate with:  python -m src.bronze.schemas
 
 CREATE SCHEMA IF NOT EXISTS bronze;
@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS bronze."gtran_firm" (
     "ingestion_timestamp"        TIMESTAMPTZ,
     "updated_ts"                 TIMESTAMPTZ,
     "ingestion_status"           VARCHAR(32),
-    "raw_payload"                JSONB
+    "raw_payload"                JSONB,
+    "status"                     VARCHAR(16) DEFAULT 'fresh'
 );
 CREATE INDEX IF NOT EXISTS "ix_gtran_firm_run" ON bronze."gtran_firm" (pipeline_run_id);
 CREATE INDEX IF NOT EXISTS "ix_gtran_firm_recid" ON bronze."gtran_firm" (raw_record_id);
@@ -113,6 +114,7 @@ ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "rates" TEXT;
 ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "term" TEXT;
 ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "reczones" TEXT;
 ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "delzones" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "status" VARCHAR(16) DEFAULT 'fresh';
 
 CREATE TABLE IF NOT EXISTS bronze."gtran_it" (
     bronze_row_id BIGSERIAL PRIMARY KEY,
@@ -167,7 +169,8 @@ CREATE TABLE IF NOT EXISTS bronze."gtran_it" (
     "ingestion_timestamp"        TIMESTAMPTZ,
     "updated_ts"                 TIMESTAMPTZ,
     "ingestion_status"           VARCHAR(32),
-    "raw_payload"                JSONB
+    "raw_payload"                JSONB,
+    "status"                     VARCHAR(16) DEFAULT 'fresh'
 );
 CREATE INDEX IF NOT EXISTS "ix_gtran_it_run" ON bronze."gtran_it" (pipeline_run_id);
 CREATE INDEX IF NOT EXISTS "ix_gtran_it_recid" ON bronze."gtran_it" (raw_record_id);
@@ -212,6 +215,7 @@ ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "rates" TEXT;
 ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "term" TEXT;
 ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "reczones" TEXT;
 ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "delzones" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "status" VARCHAR(16) DEFAULT 'fresh';
 
 CREATE TABLE IF NOT EXISTS bronze."gawd" (
     bronze_row_id BIGSERIAL PRIMARY KEY,
@@ -311,7 +315,8 @@ CREATE TABLE IF NOT EXISTS bronze."gawd" (
     "ingestion_timestamp"        TIMESTAMPTZ,
     "updated_ts"                 TIMESTAMPTZ,
     "ingestion_status"           VARCHAR(32),
-    "raw_payload"                JSONB
+    "raw_payload"                JSONB,
+    "record_status"              VARCHAR(16) DEFAULT 'fresh'
 );
 CREATE INDEX IF NOT EXISTS "ix_gawd_run" ON bronze."gawd" (pipeline_run_id);
 CREATE INDEX IF NOT EXISTS "ix_gawd_recid" ON bronze."gawd" (raw_record_id);
@@ -401,6 +406,7 @@ ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "version_status" TEXT;
 ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "updateddatetime" TEXT;
 ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "locations" TEXT;
 ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "rates" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "record_status" VARCHAR(16) DEFAULT 'fresh';
 
 CREATE TABLE IF NOT EXISTS bronze."gindex" (
     bronze_row_id BIGSERIAL PRIMARY KEY,

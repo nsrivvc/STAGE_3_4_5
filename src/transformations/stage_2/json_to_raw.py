@@ -13,6 +13,31 @@ sits next to this one, declaring the little the database cannot tell us:
     firm.py  gTRAN_FIRM -> gtran_firm     awards.py  gAWD   -> gawd
     interruptible.py  gTRAN_IT -> gtran_it     ioc.py  gINDEX -> gindex
 
+WHERE THIS RUNS
+---------------
+ONE workflow file executes this script for every source:
+
+    .github/workflows/(stage2)json_to_raw.yml
+        -> step "Write JSON to its raw table"
+        -> python src/transformations/stage_2/json_to_raw.py --file <input>
+
+There is no firm yml / awards yml to choose between at stage 2. The feed is
+decided by the FILE NAME of the JSON you point the workflow at, matched in
+load() below against each feed module's FILE_WORDS:
+
+    firms_*.json          -> firm.py          -> bronze.gtran_firm
+    interruptibles_*.json -> interruptible.py -> bronze.gtran_it
+    awards_*.json         -> awards.py        -> bronze.gawd
+    ioc_*.json            -> ioc.py           -> bronze.gindex
+
+Stages 3-5 are the opposite: same code path per feed would not hold there, so
+each feed has its own yml ((stage3)bronze_to_silver_firm.yml etc.) and you pick
+the feed by picking the workflow. Here you pick the feed by picking the file.
+
+(The bronze_ingest_*.yml workflows are a different route into Bronze: they run
+the stage 1-2 subproject in src/transformations/stage_1_2(ingestion)/ -- fetch
+from the API and load in one job -- not this script.)
+
 THE TABLE OWNS THE SCHEMA. Columns come from information_schema at run time,
 not from a list in here, so this cannot drift from the database: a column added
 there is filled on the next run, and a JSON key with nowhere to land is
@@ -73,7 +98,7 @@ class PayloadError(Exception):
 
 # --- 1. THE FILE: which raw table it belongs in, and what is in it ------------
 
-#loads the actual JSON file, and links the appropiate its raw table off the file name
+#loads the actual JSON file, and links the appropiate raw table off the file name
 def load(file_path: str):
     """(feed, payload). The name picks the raw table -- firms_test.json is
     firm, _fetched_ioc.json is IOC -- and the contents are the records.
@@ -90,6 +115,7 @@ def load(file_path: str):
             + "; ".join(f"{f.NAME} -> {'/'.join(f.FILE_WORDS)}" for f in FEEDS)
         )
 
+    """ Intiates the actual pay load of the file"""
     with open(file_path, "r", encoding="utf-8") as fh:
         payload = json.load(fh)
     if not isinstance(payload, dict):
@@ -109,7 +135,7 @@ def records_of(payload: Dict[str, Any], feed) -> Any:
     return None
 
 
-#parses the actual JSON in place with something?
+#parses the actual JSON in place
 def parse_embedded_json(value: Any) -> Any:
     """Parse a string holding a JSON object/array; pass anything else through.
     The source sends the same field as a native array on one record and as a
@@ -189,7 +215,7 @@ def _canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
 
 
-#Fits the value into a column
+#prepapres the actual JSON value to be put into the column.
 def to_text(value: Any) -> Any:
     """Fit a JSON value into a text column: structure becomes compact
     sorted-key JSON, so the same content always renders the same text; plain
@@ -225,9 +251,8 @@ def to_row(record: Dict[str, Any], feed, key_map: Dict[str, str],
         if (column := key_map.get(key.lower())) is not None
     }
 
-    # Fingerprint of the business values. Stage 3's deduplication compares rows
-    # on it (see stage_3/deduplication(p1)/dedup_base.py), and the raw tables
-    # carry UNIQUE (hash_key), so bronze has to stamp it.
+    # Content fingerprint, stamped for traceability/debugging only. Nothing
+    # depends on it: stage 3's deduplication does its own full-field comparison.
     hash_key = hashlib.sha256(
         json.dumps(row, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
@@ -240,6 +265,14 @@ def to_row(record: Dict[str, Any], feed, key_map: Dict[str, str],
         ingestion_status=status,
         raw_payload=record,
     )
+
+    # Freshness marker: every row lands 'fresh'; ammendments(p2) later flips it
+    # to 'processed'. The JSON never declares it, so it is stamped here. The
+    # column name is per-feed (gawd's "status" is business data), and a feed
+    # with no marker (IOC) stamps nothing.
+    status_column = getattr(feed, "STATUS_COLUMN", None)
+    if status_column:
+        row[status_column] = "fresh"
     return row
 
 
@@ -265,9 +298,9 @@ def _q(identifier: str) -> str:
 #writes the actual rows of data into the table itself.
 def write_rows(conn, table: str, columns: List[Tuple[str, str]],
                rows: List[Dict[str, Any]]) -> int:
-    """Insert the rows and return how many landed. ON CONFLICT DO NOTHING
-    because the raw tables carry UNIQUE (hash_key): re-running a file skips
-    records already there instead of raising."""
+    """Insert the rows and return how many landed. Every row lands: Bronze is
+    the full history, duplicates included. Stage 3's deduplication(p1) is the
+    one and only place duplicate rows are dropped."""
     if not rows:
         return 0
     from psycopg2.extras import Json, execute_values
@@ -278,14 +311,13 @@ def write_rows(conn, table: str, columns: List[Tuple[str, str]],
 
     stmt = (
         f"INSERT INTO {_q(SCHEMA)}.{_q(table)} "
-        f"({', '.join(_q(name) for name, _ in columns)}) VALUES %s "
-        f"ON CONFLICT (hash_key) DO NOTHING RETURNING 1"
+        f"({', '.join(_q(name) for name, _ in columns)}) VALUES %s RETURNING 1"
     )
     params = [tuple(value(row, name, dtype) for name, dtype in columns) for row in rows]
 
     # execute_values sends the batch as a few multi-row INSERTs instead of one
     # statement per row — the difference between minutes and seconds against a
-    # remote database. RETURNING 1 comes back only for rows actually inserted.
+    # remote database.
     with conn.cursor() as cur:
         landed = execute_values(cur, stmt, params, page_size=BATCH_SIZE, fetch=True)
     conn.commit()
@@ -329,10 +361,18 @@ def write_log(conn, meta: Dict[str, Any], started: datetime, read: int,
 # --- 6. THE RUN + CLI --------------------------------------------------------
 
 def run(file_path: str, dry_run: bool = False) -> int:
+    """Does the actual work, start to finish: one JSON file in, one batch of
+    rows landed in its raw table. Six steps, marked below. Returns 0 on
+    success, 1 if the database write failed."""
+
+    # STEP 1 -- Which feed is this? The file NAME answers (firms_*.json ->
+    # firm), and the file CONTENTS become `payload`. See load() above.
     started = datetime.now(timezone.utc)
     feed, payload = load(file_path)
 
-    # Stamped onto every row, so any landed row traces back to this run + file.
+    # STEP 2 -- Make the run's "audit stamp": a fresh run id, where the data
+    # came from, and when. Every row gets a copy, so any row in bronze can be
+    # traced back to the exact run and file that landed it.
     meta = {
         "pipeline_run_id": str(uuid.uuid4()),
         "source_system": payload.get("sourceSystem", os.getenv("SOURCE_SYSTEM", "NatGasHub")),
@@ -344,12 +384,19 @@ def run(file_path: str, dry_run: bool = False) -> int:
     print(f"{meta['source_file_name']} -> {feed.NAME} -> {SCHEMA}.{feed.TABLE}")
     print(f"Run id: {meta['pipeline_run_id']}")
 
+    # STEP 3 -- Open the database and ask the target table what columns it
+    # has (the table owns the schema; nothing is hardcoded here). key_map is
+    # the JSON-key -> column-name dictionary the next step matches against.
     conn = connect()
     try:
         columns = table_columns(conn, feed.TABLE)
         key_map = key_to_column(feed, columns)
         print(f"Columns: {len(columns)} read from {SCHEMA}.{feed.TABLE}")
 
+        # STEP 4 -- Shape every JSON record into one table-shaped row.
+        # A record missing a required field still lands, just flagged INVALID
+        # (stage 2 drops nothing). A JSON key with no matching column is noted
+        # and kept inside raw_payload, so no data is lost either way.
         rows: List[Dict[str, Any]] = []
         invalid = 0
         unmapped: set = set()
@@ -362,17 +409,20 @@ def run(file_path: str, dry_run: bool = False) -> int:
             rows.append(to_row(record, feed, key_map, meta,
                                "INVALID" if missing else "LOADED"))
 
-        # Not a failure: the key is kept whole in raw_payload. It means the
-        # source grew a field the table has no column for.
         if unmapped:
             print(f"  note: no column for {', '.join(sorted(unmapped))} "
                   "- kept in raw_payload only")
 
+        # STEP 5 -- Dry run? Then we are done: everything above ran for real
+        # (routing, columns, shaping) but nothing is written.
         if dry_run:
             print(f"\n[dry-run] {len(rows)} row(s) ready for {SCHEMA}.{feed.TABLE}; "
                   "nothing written.")
             return 0
 
+        # STEP 6 -- Write the rows, then record the run in bronze.ingestion_log.
+        # If the write blows up: undo it (rollback), still log the failure, and
+        # return 1 so CI shows red. Success prints the counts and returns 0.
         try:
             written = write_rows(conn, feed.TABLE, columns, rows)
             write_log(conn, meta, started, len(rows), written, invalid, "Succeeded")
@@ -386,16 +436,23 @@ def run(file_path: str, dry_run: bool = False) -> int:
                 pass
             return 1
 
-        summary = f"\nDone. records={len(rows)} written={written} invalid={invalid}"
-        if len(rows) - written:
-            summary += f" (already in the table: {len(rows) - written})"
-        print(summary)
+        print(f"\nDone. records={len(rows)} written={written} invalid={invalid}")
         return 0
     finally:
+        # Always runs, success or failure: never leave the connection open.
         conn.close()
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """The command-line front door. Does NO data work itself -- it only:
+
+        1. defines the two flags this script accepts (--file, --dry-run),
+        2. hands them to run() above, which does everything,
+        3. turns any failure into one readable ERROR line and exit code 2
+           (instead of a Python stack trace).
+
+    The exit code is what GitHub Actions reads: 0 = green, anything else = red.
+    """
     parser = argparse.ArgumentParser(
         description="Stage 2: write a JSON file into its raw table."
     )
@@ -408,9 +465,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         return run(args.file, args.dry_run)
     except FileNotFoundError:
+        # The path given with --file does not exist.
         print(f"ERROR: input file not found: {args.file}", file=sys.stderr)
         return 2
     except (PayloadError, RuntimeError) as exc:
+        # PayloadError: the file could not be routed to a feed, or its JSON is
+        # not shaped as expected. RuntimeError: DATABASE_URL is not set.
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 

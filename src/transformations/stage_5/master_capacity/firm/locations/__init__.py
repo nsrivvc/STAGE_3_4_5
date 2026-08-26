@@ -5,7 +5,7 @@ firm / locations -- master capacity
 Builds firm_locations_master_capacity, which feeds
 final_locations_master_capacity in ../../final/locations/.
 
-EMPTY: drop a module here with a @register-ed SilverTransformation
+EMPTY: drop a module here with a @register-ed PipelineTransformation
 subclass. Its workflow already exists and targets this exact folder:
     (stage5)master_capacity_firm_locations.yml
     python run.py --group master_capacity/firm/locations

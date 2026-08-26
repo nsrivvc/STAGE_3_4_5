@@ -12,6 +12,9 @@ a feedType (or be told which feed it is with --feed).
 
 NAME = "gTRAN_IT"
 TABLE = "gtran_it"
+#: Pipeline freshness marker: every landed row starts 'fresh'; ammendments(p2)
+#: later flips it to 'processed'. Not read from the JSON.
+STATUS_COLUMN = "status"
 FILE_WORDS = ("interruptible", "interruptibles", "it")
 RECORD_KEYS = ("Interruptibles", "contracts")
 ID_FIELD = "Id"

@@ -3,7 +3,7 @@ parquet_export.py
 =================
 Writes each table's rows to Parquet, partitioned by stage and by JSON source
 feed. Called from the single choke point every transformation funnels through
-(core/base.py :: SilverTransformation.run), so a new table is exported without
+(core/base.py :: PipelineTransformation.run), so a new table is exported without
 touching this file.
 
 LAYOUT

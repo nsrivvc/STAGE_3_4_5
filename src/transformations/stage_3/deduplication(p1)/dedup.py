@@ -1,81 +1,141 @@
 """
 dedup.py -- phase 1 of stage 3: drop the rows we have already seen.
 ==================================================================
-Ingestion writes a fresh raw batch into Bronze on every fetch, and most of those
-rows are identical to what the previous fetch already delivered. This phase
-copies Bronze into staging and lets through only what is new or changed:
+Every fetch lands a fresh batch in Bronze, duplicates and all. This phase
+copies Bronze into staging and keeps ONE copy of each distinct row:
 
     firm           bronze.gtran_firm -> silver_staging.firm_dedup
     interruptible  bronze.gtran_it   -> silver_staging.interruptible_dedup
     awards         bronze.gawd       -> silver_staging.awards_dedup
 
-Whole rows in, whole rows out. This phase does not know the core / locations /
-rates grains exist and it does not unpack the nested `locations` / `rates` JSON
-arrays -- those ride along inside the row, and decompisition(p3) splits them.
+(IOC has no dedup on purpose -- deduplication covers these three feeds only.)
 
-THE DUPLICATE CHECK IS ONE LINE: `ON CONFLICT (hash_key) DO NOTHING`, in
-transform_sql below. `hash_key` is a SHA-256 of the row's content that stage 2
-stamps on every Bronze row (see stage_2/json_to_raw.py), so two rows carry the
-same one precisely when their content matches. The target table declares
-UNIQUE (hash_key), so Postgres does the comparison as an index lookup: hash
-already present -> the row is not copied; hash absent -> the row is inserted.
+HOW A DUPLICATE IS DECIDED -- right here, nowhere else
+------------------------------------------------------
+Two rows are duplicates when EVERY DATA FIELD MATCHES EXACTLY. The comparison
+is self-contained in transform_sql below; it does not depend on anything any
+earlier stage computed.
 
-Nothing is deleted anywhere. Bronze keeps every row forever; a duplicate is
-simply never copied into staging. The rows a run lets through are exactly the
-rows it inserts, which is what the run reports as "rows affected".
+The one wrinkle: every Bronze row also carries the pipeline's own bookkeeping
+(row id, run id, load timestamps, file name...). Two copies of the same
+contract always differ there, because they arrived in different runs. So those
+stamp columns are set aside (LOAD_STAMPS below) and the comparison covers
+everything else -- the actual data.
+
+In SQL that reads:
+
+    to_jsonb(row) - LOAD_STAMPS      -- the row as {column: value}, stamps removed
+
+    * DISTINCT ON (that)             -- one copy per distinct content in the batch
+    * WHERE NOT EXISTS (same content -- and no copy already in the staging table
+      already in staging)               from an earlier run
+
+Rows that survive both checks are inserted into the staging table on Neon.
+Nothing is ever deleted: Bronze keeps its duplicates (it is the full history),
+and staging simply never receives a second copy.
+
+WHY `LIKE`
+----------
+The target is created with `CREATE TABLE ... (LIKE <bronze table>)`, cloning
+the source's columns without naming them, so this file needs no column list
+and keeps working as the Bronze schema evolves.
 
 Output goes to DECOMP_SCHEMA (default `silver_staging`), which is what
 ammendments(p2), decompisition(p3) and stage 4 read.
 """
 
-from __future__ import annotations
+from __future__ import annotations #purely affects annotations.
 
-from ....core.base import SilverTransformation
+from ....core.base import PipelineTransformation
 from ....core.registry import register
 
+#: The pipeline's own bookkeeping columns -- set aside before comparing, so
+#: "duplicate" means "same DATA", not "same data loaded at the same moment".
+LOAD_STAMPS = (
+    "bronze_row_id",        # serial row number, unique by construction
+    "raw_record_id",        # copy of the record's own id (also a data column)
+    "hash_key",             # stage 2's fingerprint; carried, never compared
+    "pipeline_run_id",      # new uuid every run
+    "source_system",
+    "source_api",
+    "source_file_name",
+    "ingestion_timestamp",  # load time, differs every run
+    "updated_ts",
+    "ingestion_status",
+    "status",               # freshness marker (firm/IT); flipped by ammendments(p2)
+    "record_status",        # the same marker on gawd ("status" is business data there)
+    "raw_payload",          # the whole record again, as JSON
+)
 
-class Deduplication(SilverTransformation):
+
+class Deduplication(PipelineTransformation):
     """One Bronze feed table -> one deduplicated staging table.
 
-    A feed is the four declarations below it: what the transformation is called,
-    the table it writes, the feed it belongs to, and the Bronze table it reads.
+    A feed is the four declarations below it: what the transformation is
+    called, the table it writes, the feed it belongs to, and the Bronze table
+    it reads.
     """
 
     feed: str = ""             # "firm" | "interruptible" | "awards"
-    source_table: str = ""     # the Bronze table this deduplicates
+    source_table: str = ""     # the Raw table this deduplicates
 
     def __init__(self) -> None:
         for attr in ("feed", "source_table"):
             if not getattr(self, attr):
                 raise ValueError(f"{type(self).__name__} must set `{attr}`.")
-        self.source = self.feed
-        self.bronze_sources = [self.source_table]
+        self.source = self.feed #we define what source
+        self.bronze_sources = [self.source_table] # we define the raw table
         super().__init__()
 
+    #used to see what schema we're landing into within the Neon instance
     @property
     def target_schema(self) -> str:
         """Staging, not Silver -- p2/p3 and stage 4 all read from here."""
         return self.decomp_schema
 
+    #this creates an instance of the table before duplication 
     def create_table_sql(self) -> str:
         return f"""
-        CREATE SCHEMA IF NOT EXISTS {self.target_schema};
+        CREATE SCHEMA IF NOT EXISTS {self.target_schema}; -- create staging schema if missing
 
-        -- LIKE clones the Bronze table's columns, so this needs no knowledge of
-        -- them and keeps working as the source schema evolves. The UNIQUE below
-        -- is what makes the duplicate check in transform_sql work.
         CREATE TABLE IF NOT EXISTS {self.target_schema}.{self.table_name} (
-            LIKE {self.source_schema}.{self.source_table},
-            CONSTRAINT uq_{self.table_name}_hash UNIQUE (hash_key)
+            LIKE {self.source_schema}.{self.source_table}
         );
+
+        -- Migration for tables created by the older hash-based version: the
+        -- comparison now lives entirely in transform_sql, so the constraint
+        -- is retired. No-op on a fresh table.
+        ALTER TABLE {self.target_schema}.{self.table_name}
+            DROP CONSTRAINT IF EXISTS uq_{self.table_name}_hash;
         """
 
+    #handles the actual transformation / logic for deduplicated rows.
+    #done entirley in sql
     def transform_sql(self) -> str:
+        # to_jsonb(s) turns a whole row into {column: value, ...}; subtracting
+        # LOAD_STAMPS leaves only the data fields. Comparing those compares
+        # every data field of two rows at once.
+        stamps = ", ".join(f"'{c}'" for c in LOAD_STAMPS)      # the bookkeeping columns, quoted for SQL
+        content = f"(to_jsonb(s) - ARRAY[{stamps}]::text[])"   # an incoming Bronze row, data fields only
+        existing = f"(to_jsonb(t) - ARRAY[{stamps}]::text[])"  # a staging row, data fields only
         return f"""
+        -- Copy rows from Bronze into staging. Nothing is ever deleted:
+        -- a duplicate is simply not copied in.
         INSERT INTO {self.target_schema}.{self.table_name}
-        SELECT s.* FROM {self.source_schema}.{self.source_table} s
-        -- The duplicate check. Content already recorded -> not copied.
-        ON CONFLICT (hash_key) DO NOTHING
+        -- One copy per distinct content within this batch: rows whose data
+        -- fields all match collapse to the earliest one (lowest bronze_row_id).
+        SELECT DISTINCT ON ({content}) s.*
+        -- Read every row Bronze holds for this feed...
+        FROM {self.source_schema}.{self.source_table} s
+        -- ...and keep only content the staging table does not already hold from
+        -- an earlier run. Same data fields = duplicate = not copied again.
+        WHERE NOT EXISTS (
+            SELECT 1 FROM {self.target_schema}.{self.table_name} t
+            WHERE {existing} = {content}
+        )
+        -- Ties within the batch: the ORDER BY makes DISTINCT ON keep the row
+        -- with the lowest bronze_row_id, i.e. the earliest-loaded copy.
+        ORDER BY {content}, s.bronze_row_id
         """
 
 
@@ -103,3 +163,6 @@ class SilverAwardsDedup(Deduplication):
     table_name = "awards_dedup"
     feed = "awards"
     source_table = "gawd"
+
+
+# No IOC class: gindex goes to Silver without a deduplication phase.

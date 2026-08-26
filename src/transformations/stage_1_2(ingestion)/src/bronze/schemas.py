@@ -64,6 +64,20 @@ METADATA_COLUMNS: List[tuple] = [
     ("raw_payload", "JSONB"),                # original JSON fragment for this row
 ]
 
+# ---------------------------------------------------------------------------
+# Pipeline freshness marker, per table: every landed row starts 'fresh' and
+# ammendments(p2) later flips it to 'processed'. Named per-table because gawd
+# already has a business column "status" (the award's own status, which stage 3
+# reads), so the marker is "record_status" there. gindex carries none: IOC
+# skips the staging phases.
+# ---------------------------------------------------------------------------
+STATUS_COLUMNS: Dict[str, str] = {
+    "gtran_firm": "status",
+    "gtran_it": "status",
+    "gawd": "record_status",
+}
+STATUS_FRESH = "fresh"
+
 SCHEMA_NAME = "bronze"
 
 # Convenience lookups -------------------------------------------------------
@@ -75,7 +89,11 @@ def business_db_columns(table: str) -> List[str]:
 
 def all_db_columns(table: str) -> List[str]:
     """Business columns followed by metadata columns (DB order)."""
-    return business_db_columns(table) + [c for c, _ in METADATA_COLUMNS]
+    columns = business_db_columns(table) + [c for c, _ in METADATA_COLUMNS]
+    status_col = STATUS_COLUMNS.get(table)
+    if status_col:
+        columns.append(status_col)
+    return columns
 
 
 def source_key_map(table: str) -> Dict[str, str]:
@@ -107,6 +125,11 @@ def generate_table_ddl(table: str) -> str:
     col_lines.append("    -- ---- pipeline metadata ----")
     for col, pgtype in METADATA_COLUMNS:
         col_lines.append(f"    {_q(col):<28} {pgtype},")
+    status_col = STATUS_COLUMNS.get(table)
+    if status_col:
+        col_lines.append(
+            f"    {_q(status_col):<28} VARCHAR(16) DEFAULT '{STATUS_FRESH}',"
+        )
 
     # No UNIQUE here: Bronze is the full history, duplicates included.
     # Stage 3's deduplication(p1) is the one place duplicates are filtered.
@@ -138,6 +161,14 @@ def generate_table_ddl(table: str) -> str:
         lines.append(
             f"ALTER TABLE {SCHEMA_NAME}.{_q(table)} "
             f"ADD COLUMN IF NOT EXISTS {_q(src.lower())} TEXT;"
+        )
+    # The freshness marker migrates the same way; the DEFAULT backfills
+    # existing rows as 'fresh', which is what a first deployment wants.
+    if status_col:
+        lines.append(
+            f"ALTER TABLE {SCHEMA_NAME}.{_q(table)} "
+            f"ADD COLUMN IF NOT EXISTS {_q(status_col)} "
+            f"VARCHAR(16) DEFAULT '{STATUS_FRESH}';"
         )
     return "\n".join(lines)
 

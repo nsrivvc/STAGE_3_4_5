@@ -4,10 +4,10 @@ registry.py
 A tiny registry so transformations self-register. Each transformation file does:
 
     from ..core.registry import register
-    from ..core.base import SilverTransformation
+    from ..core.base import PipelineTransformation
 
     @register
-    class MySilverTable(SilverTransformation):
+    class MySilverTable(PipelineTransformation):
         name = "silver_my_table"
         ...
 
@@ -19,12 +19,12 @@ from __future__ import annotations
 
 from typing import Dict, Type
 
-from .base import SilverTransformation
+from .base import PipelineTransformation
 
-REGISTRY: Dict[str, SilverTransformation] = {}
+REGISTRY: Dict[str, PipelineTransformation] = {}
 
 
-def register(cls: Type[SilverTransformation]) -> Type[SilverTransformation]:
+def register(cls: Type[PipelineTransformation]) -> Type[PipelineTransformation]:
     """Class decorator: instantiate and add to the registry, keyed by `name`."""
     instance = cls()
     if instance.name in REGISTRY:

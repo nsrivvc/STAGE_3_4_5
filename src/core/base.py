@@ -4,7 +4,7 @@ base.py
 The shared pattern every Silver transformation follows.
 
 To add a new Silver table, create a file in src/transformations/ that subclasses
-SilverTransformation and implements three things:
+PipelineTransformation and implements three things:
 
     name            -> the registry key / CLI name (e.g. "silver_firm_transport_rate")
     table_name      -> the bare table name created in the Silver schema
@@ -39,7 +39,7 @@ if TYPE_CHECKING:  # for type hints only; keeps pyarrow out of the import path
 log = get_logger(__name__)
 
 
-class SilverTransformation(ABC):
+class PipelineTransformation(ABC):
     # --- override these in each subclass -------------------------------------
     name: str = ""                 # e.g. "silver_firm_transport_rate"
     table_name: str = ""           # e.g. "firm_transport_rate" (lives in silver_schema)

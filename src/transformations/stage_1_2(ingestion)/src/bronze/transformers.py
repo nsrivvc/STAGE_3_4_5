@@ -17,7 +17,8 @@ Idempotency hash
 ----------------
 hash_key = SHA-256 over the canonical JSON of the record's *business* values
 only (metadata excluded). Re-ingesting byte-identical data therefore produces
-the same hash, which stage 3's deduplication(p1) uses to drop duplicates.
+the same hash. It is a traceability stamp only -- stage 3's deduplication
+does its own full-field comparison and does not read it.
 (The sheet's sample hashes are SHA-1/40-char; SHA-256 is used here for lower
 collision risk. Swap hashlib.sha256 -> hashlib.sha1 to match those exactly.)
 """
@@ -94,4 +95,9 @@ def build_row(
             "raw_payload": record,  # original fragment; writer adapts to JSONB
         }
     )
+    # Freshness marker: rows land 'fresh'; ammendments(p2) flips them later.
+    # Per-table name (see schemas.STATUS_COLUMNS); gindex carries none.
+    status_col = schemas.STATUS_COLUMNS.get(table)
+    if status_col:
+        row[status_col] = schemas.STATUS_FRESH
     return row

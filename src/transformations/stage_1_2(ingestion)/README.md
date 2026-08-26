@@ -120,11 +120,11 @@ stage_1_2(ingestion)/
 
 ## Idempotency / duplicate loads
 
-Each row gets a `hash_key` = SHA-256 over its **business** field values (metadata
-excluded). Bronze keeps every load, duplicates included — re-ingesting the same
-payload lands the batch again. Stage 3's deduplication(p1) compares on
-`hash_key` and is the one place duplicate content is dropped, so staging and
-Silver stay clean.
+Bronze keeps every load, duplicates included — re-ingesting the same payload
+lands the batch again. Stage 3's deduplication(p1) is the one place duplicate
+rows are dropped: it compares the rows' own data fields itself, with no help
+from this stage. (Each row still carries a `hash_key` content fingerprint,
+stamped for traceability only.)
 
 To treat re-loads as updates instead of no-ops, change the writer's conflict
 clause to `DO UPDATE SET updated_ts = now(), ingestion_status = EXCLUDED.ingestion_status`.

@@ -305,12 +305,27 @@ METADATA_COLUMNS: Tuple[Tuple[str, str], ...] = (
     ("raw_payload", "JSONB"),                # original JSON fragment, untouched
 )
 
+# Pipeline freshness marker, per table: rows land 'fresh', ammendments(p2)
+# later flips them to 'processed'. gawd's is "record_status" because its
+# business "status" column (the award's own status) is read by stage 3.
+# gindex has none: IOC skips the staging phases.
+STATUS_COLUMNS: Dict[str, str] = {
+    "gtran_firm": "status",
+    "gtran_it": "status",
+    "gawd": "record_status",
+}
+STATUS_FRESH = "fresh"
+
 SCHEMA = "bronze"
 
 
 def all_db_columns(feed: Feed) -> List[str]:
     """Business columns then metadata columns — the DB column order."""
-    return [src.lower() for src, _ in feed.columns] + [c for c, _ in METADATA_COLUMNS]
+    columns = [src.lower() for src, _ in feed.columns] + [c for c, _ in METADATA_COLUMNS]
+    status_col = STATUS_COLUMNS.get(feed.table)
+    if status_col:
+        columns.append(status_col)
+    return columns
 
 
 # ===========================================================================
@@ -496,8 +511,8 @@ def build_row(feed: Feed, record: Dict[str, Any], raw_id: str,
         if (col := key_map.get(key.lower())) is not None
     }
 
-    # Same business content -> same hash. Stage 3's deduplication(p1) compares
-    # rows on it; Bronze itself keeps every load, duplicates included.
+    # Content fingerprint, stamped for traceability only. Stage 3's
+    # deduplication does its own full-field comparison and does not read it.
     hash_key = hashlib.sha256(
         json.dumps(business, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
@@ -516,6 +531,10 @@ def build_row(feed: Feed, record: Dict[str, Any], raw_id: str,
         ingestion_status=status,
         raw_payload=record,  # original fragment; writer adapts to JSONB
     )
+    # Freshness marker: rows land 'fresh'; ammendments(p2) flips them later.
+    status_col = STATUS_COLUMNS.get(feed.table)
+    if status_col:
+        row[status_col] = STATUS_FRESH
     return row
 
 
@@ -542,6 +561,9 @@ def generate_ddl() -> str:
         cols.append("    -- ---- pipeline metadata ----")
         for col, pgtype in METADATA_COLUMNS:
             cols.append(f"    {_q(col):<28} {pgtype},")
+        status_col = STATUS_COLUMNS.get(t)
+        if status_col:
+            cols.append(f"    {_q(status_col):<28} VARCHAR(16) DEFAULT '{STATUS_FRESH}',")
         # No UNIQUE on Bronze: it keeps every load; stage 3 dedups.
         if cols[-1].endswith(","):
             cols[-1] = cols[-1][:-1]
@@ -555,6 +577,11 @@ def generate_ddl() -> str:
         # feed columns are left in place (dropping destroys landed data).
         for src, _ in feed.columns:
             parts.append(f"ALTER TABLE {SCHEMA}.{_q(t)} ADD COLUMN IF NOT EXISTS {_q(src.lower())} TEXT;")
+        if status_col:
+            parts.append(
+                f"ALTER TABLE {SCHEMA}.{_q(t)} ADD COLUMN IF NOT EXISTS "
+                f"{_q(status_col)} VARCHAR(16) DEFAULT '{STATUS_FRESH}';"
+            )
         parts.append("")
 
     parts.append(f"""CREATE TABLE IF NOT EXISTS {SCHEMA}."ingestion_log" (

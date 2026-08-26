@@ -60,7 +60,7 @@ from __future__ import annotations
 
 from typing import List, Tuple
 
-from ....core.base import SilverTransformation
+from ....core.base import PipelineTransformation
 
 #: Business columns, in the order the agreed schema lists them. `{id}` and
 #: `{qty}` are substituted per feed. Everything is TEXT in Bronze except index.
@@ -222,7 +222,7 @@ class NestedExplosion:
         return f"{self.source_schema}.{self.source_table} s"
 
 
-class LocationsDecomposition(NestedExplosion, SilverTransformation):
+class LocationsDecomposition(NestedExplosion, PipelineTransformation):
     """The locations grain, projected onto the agreed schema.
 
     Two feeds differ only in two column names, so they are class attributes:
@@ -316,7 +316,7 @@ class LocationsDecomposition(NestedExplosion, SilverTransformation):
         """
 
 
-class GrainDecomposition(NestedExplosion, SilverTransformation):
+class GrainDecomposition(NestedExplosion, PipelineTransformation):
     """Generic decomposition for the core and rates grains.
 
     Locations has an agreed PySpark schema and its own typed class above. Core

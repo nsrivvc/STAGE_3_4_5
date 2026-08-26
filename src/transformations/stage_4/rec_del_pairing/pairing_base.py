@@ -46,10 +46,10 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from ....core.base import SilverTransformation
+from ....core.base import PipelineTransformation
 
 
-class RecDelPairingTransformation(SilverTransformation):
+class RecDelPairingTransformation(PipelineTransformation):
     # --- set these in each subclass ------------------------------------------
     entity: str = ""            # "firm" | "interruptible" | "awards"
     locations_table: str = ""   # source table, in the decomposition schema

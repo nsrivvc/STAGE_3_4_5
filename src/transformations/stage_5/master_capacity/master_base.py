@@ -35,7 +35,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from .models import COLUMNS_BY_GRAIN, NATURAL_KEY_BY_GRAIN
-from ....core.base import SilverTransformation
+from ....core.base import PipelineTransformation
 
 #: Model columns that are SQL keywords ("index" is merely unreserved, "group"
 #: is fully reserved) -- every identifier position quotes them.
@@ -46,7 +46,7 @@ def _q(name: str) -> str:
     return f'"{name}"' if name in KEYWORD_COLUMNS else name
 
 
-class MasterCapacityTransformation(SilverTransformation):
+class MasterCapacityTransformation(PipelineTransformation):
     # --- set these in each subclass ------------------------------------------
     feed: str = ""                    # "firm" | "interruptible" | "awards"
     grain: str = ""                   # "core" | "locations" | "rates"

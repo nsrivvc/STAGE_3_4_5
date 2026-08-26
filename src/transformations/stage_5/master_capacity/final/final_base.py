@@ -56,7 +56,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 
 from ..master_base import _q
-from .....core.base import SilverTransformation
+from .....core.base import PipelineTransformation
 from .....db.connection import table_exists
 from .....logging_config import get_logger
 
@@ -69,7 +69,7 @@ log = get_logger(__name__)
 FEEDS = ("firm", "interruptible", "awards", "index")
 
 
-class FinalMasterCapacityTransformation(SilverTransformation):
+class FinalMasterCapacityTransformation(PipelineTransformation):
     # --- set these in each subclass ------------------------------------------
     grain: str = ""                 # "core" | "locations" | "rates"
 

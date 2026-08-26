@@ -27,12 +27,12 @@ the run that creates it. Later runs will NOT pick up new/changed Bronze rows.
 
 from __future__ import annotations
 
-from ..core.base import SilverTransformation
+from ..core.base import PipelineTransformation
 from ..core.registry import register
 
 
 @register
-class SilverFirmTransportRate(SilverTransformation):
+class SilverFirmTransportRate(PipelineTransformation):
     name = "silver_firm_transport_rate"
     table_name = "firm_transport_rate"
     source = "firm"
