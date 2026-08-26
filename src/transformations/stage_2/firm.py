@@ -23,6 +23,7 @@ row and stage 3 fans them out.
 
 NAME = "gTRAN_FIRM"
 TABLE = "gtran_firm"
+FILE_WORDS = ("firm", "firms")   # a file named for this feed: firms_test.json
 RECORD_KEYS = ("Firms", "contracts")
 ID_FIELD = "Id"
 REQUIRED = ("Id", "FirmId")

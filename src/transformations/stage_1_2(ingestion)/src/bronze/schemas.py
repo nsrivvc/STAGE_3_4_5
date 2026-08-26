@@ -108,8 +108,10 @@ def generate_table_ddl(table: str) -> str:
     for col, pgtype in METADATA_COLUMNS:
         col_lines.append(f"    {_q(col):<28} {pgtype},")
 
-    # idempotency: content hash is unique within the table
-    col_lines.append(f"    CONSTRAINT {_q('uq_' + table + '_hash')} UNIQUE (hash_key)")
+    # No UNIQUE here: Bronze is the full history, duplicates included.
+    # Stage 3's deduplication(p1) is the one place duplicates are filtered.
+    if col_lines[-1].endswith(","):
+        col_lines[-1] = col_lines[-1][:-1]
 
     lines.append("\n".join(col_lines))
     lines.append(");")

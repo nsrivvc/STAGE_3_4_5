@@ -496,8 +496,8 @@ def build_row(feed: Feed, record: Dict[str, Any], raw_id: str,
         if (col := key_map.get(key.lower())) is not None
     }
 
-    # Same business content -> same hash -> UNIQUE(hash_key) makes re-ingesting
-    # a file a no-op instead of duplicating rows.
+    # Same business content -> same hash. Stage 3's deduplication(p1) compares
+    # rows on it; Bronze itself keeps every load, duplicates included.
     hash_key = hashlib.sha256(
         json.dumps(business, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()
@@ -542,7 +542,9 @@ def generate_ddl() -> str:
         cols.append("    -- ---- pipeline metadata ----")
         for col, pgtype in METADATA_COLUMNS:
             cols.append(f"    {_q(col):<28} {pgtype},")
-        cols.append(f"    CONSTRAINT {_q('uq_' + t + '_hash')} UNIQUE (hash_key)")
+        # No UNIQUE on Bronze: it keeps every load; stage 3 dedups.
+        if cols[-1].endswith(","):
+            cols[-1] = cols[-1][:-1]
 
         parts.append(f"CREATE TABLE IF NOT EXISTS {SCHEMA}.{_q(t)} (\n" + "\n".join(cols) + "\n);")
         parts.append(f"CREATE INDEX IF NOT EXISTS {_q('ix_' + t + '_run')} ON {SCHEMA}.{_q(t)} (pipeline_run_id);")
@@ -587,8 +589,8 @@ CREATE INDEX IF NOT EXISTS "ix_ingestion_log_run"
 # ===========================================================================
 
 class PostgresWriter:
-    """Writes to Neon / any Postgres via psycopg 3. Idempotency lives here:
-    INSERT ... ON CONFLICT (hash_key) DO NOTHING."""
+    """Writes to Neon / any Postgres via psycopg 3. Plain INSERT: Bronze keeps
+    every batch, duplicates included; stage 3's deduplication filters them."""
 
     def __init__(self, dsn: str) -> None:
         # imported lazily so --dry-run needs no driver installed
@@ -611,8 +613,7 @@ class PostgresWriter:
         stmt = (
             f"INSERT INTO {_q(SCHEMA)}.{_q(feed.table)} "
             f"({', '.join(_q(c) for c in columns)}) "
-            f"VALUES ({', '.join(['%s'] * len(columns))}) "
-            f"ON CONFLICT (hash_key) DO NOTHING"
+            f"VALUES ({', '.join(['%s'] * len(columns))})"
         )
         params = [
             [self._Jsonb(row.get(c)) if c == "raw_payload" and row.get(c) is not None

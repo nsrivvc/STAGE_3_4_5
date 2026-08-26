@@ -3,7 +3,8 @@ silver_interruptible_rates.py
 =============================
 Decomposes the INTERRUPTIBLE feed's rates into `<DECOMP_SCHEMA>.interruptible_rates`.
 
-Source: `interruptible_rates_dedup` (deduplication(p1) output -- rates carry no amendment marker)
+Source: `interruptible_dedup` (deduplication(p1) output -- rates carry no
+        amendment marker), exploded on its nested `rates` JSON array.
 Key:    (interruptibleid, uniqueid)
 
 Column list is explicit rather than introspected so `--show-sql` works without a
@@ -22,8 +23,69 @@ class SilverInterruptibleRates(GrainDecomposition):
     table_name = "interruptible_rates"
     feed = "interruptible"
     grain = "rates"
-    source_table = "interruptible_rates_dedup"
+    source_table = "interruptible_dedup"
     key_cols_list = ["interruptibleid", "uniqueid"]
+
+    section = "rates"
+    parent_columns = ["interruptibleid", "posteddatetime", "tspduns", "tspname"]
+
+    element_keys = [
+        "MaxDQ",
+        "MinDQ",
+        "SeasnlSt",
+        "SeasnlEnd",
+        "UniqueId",
+        "Pk",
+        "RateFormType",
+        "RateFormTypeDesc",
+        "ResRateBasis",
+        "ResRateBasisDesc",
+        "LocKMaxPress",
+        "LocKMinPress",
+        "MinVolPctNonCapRel",
+        "MinVolQtyNonCapRel",
+        "CapType",
+        "CapTypeName",
+        "CapTypeLoc",
+        "CapTypeLocDesc",
+        "ItQtyLoc",
+        "UniqueKey",
+        "Id",
+        "CreatedDateTime",
+        "KEntBegDateTime",
+        "KEntEndDateTime",
+        "RecLoc",
+        "RecLocName",
+        "RecLocPurp",
+        "RecLocPurpDesc",
+        "RecLocZn",
+        "DelLoc",
+        "DelLocName",
+        "DelLocPurp",
+        "DelLocPurpDesc",
+        "DelLocZn",
+        "LocQTI",
+        "LocQTIDesc",
+        "RateId",
+        "RateIdDesc",
+        "RateChgd",
+        "RateChgdRef",
+        "RateChgdRefDesc",
+        "MaxTrfRate",
+        "MaxTrfRateRef",
+        "MaxTrfRateRefDesc",
+        "MktBasedRateInd",
+        "SurchgId",
+        "SurchgIdDesc",
+        "SurchgInd",
+        "SurchgIndDesc",
+        "TotSurchg",
+        "DiscBegDateTime",
+        "DiscEndDateTime",
+        "RptLvl",
+        "RptLvlDesc",
+        "NgtdRateIndRates",
+    ]
 
     columns = [
         "bronze_row_id",

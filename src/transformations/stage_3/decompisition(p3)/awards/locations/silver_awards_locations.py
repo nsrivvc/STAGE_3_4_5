@@ -3,7 +3,7 @@ silver_awards_locations.py
 ==========================
 Decomposes the AWARDS feed's locations into `<DECOMP_SCHEMA>.awards_locations`.
 
-Source: `awards_locations_dedup`
+Source: `awards_dedup`, exploded on its nested `locations` JSON array.
 Key:    (id, locationpropcode, locationpurposecode)
 
 Awards locations do NOT use LocationsDecomposition: that class is typed to the
@@ -29,8 +29,42 @@ class SilverAwardsLocations(GrainDecomposition):
     table_name = "awards_locations"
     feed = "awards"
     grain = "locations"
-    source_table = "awards_locations_dedup"
+    source_table = "awards_dedup"
     key_cols_list = ["id", "locationpropcode", "locationpurposecode"]
+
+    section = "locations"
+    parent_columns = ["postdatetime", "capacityawarddatetime", "releasetermstartdate", "releasetermenddate"]
+
+    element_keys = [
+        "GS_ID",
+        "Id",
+        "OfferNumber",
+        "BidNumber",
+        "AwardNumber",
+        "TransportationServiceProviderPropCode",
+        "IBRRateFloor",
+        "IBRNameVolume",
+        "MaximumVolumetricCommitmentQuantity",
+        "SeasonalStartDate",
+        "SeasonalEndDate",
+        "LocationPurposeCode",
+        "StdLocPropPurposeCode",
+        "LocationPurposeCodeValue",
+        "LocationName",
+        "LocationPropCode",
+        "LocationQuantityTypeIndicator",
+        "LocationQuantityTypeIndicatorCodeValue",
+        "CapacityTypeLocationIndicator",
+        "CapacityTypeLocationIndicatorCodeValue",
+        "Route",
+        "AwardQuantityLocation",
+        "SeasonalDateFormat",
+        "BidderDuns",
+        "ReleaserDuns",
+        "CreatedDate",
+        "Version_Status",
+        "UpdatedDateTime",
+    ]
 
     columns = [
         "bronze_row_id",

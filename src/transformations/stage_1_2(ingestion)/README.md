@@ -72,7 +72,7 @@ Four business tables plus a run log, all in the `bronze` schema:
 Each contract row carries its `locations` and `rates` **nested** — as text
 columns and as arrays inside the `raw_payload` JSONB. There are no separate
 location/rate tables in Bronze; stage 3's deduplication phase explodes the
-nested arrays into `silver_staging.*_locations_dedup` / `*_rates_dedup`.
+nested arrays into `silver_staging.*_locations` / `*_rates`.
 
 Every business table also carries these pipeline-owned metadata columns:
 `raw_record_id`, `hash_key`, `pipeline_run_id`, `source_system`, `source_api`,
@@ -121,10 +121,10 @@ stage_1_2(ingestion)/
 ## Idempotency / duplicate loads
 
 Each row gets a `hash_key` = SHA-256 over its **business** field values (metadata
-excluded). Every Bronze table has `UNIQUE (hash_key)`, and the Postgres writer
-inserts with `ON CONFLICT (hash_key) DO NOTHING`. Re-ingesting the same payload
-therefore inserts **zero** new rows — the load is idempotent. The run log
-reports `rows_written` as the count of genuinely new rows.
+excluded). Bronze keeps every load, duplicates included — re-ingesting the same
+payload lands the batch again. Stage 3's deduplication(p1) compares on
+`hash_key` and is the one place duplicate content is dropped, so staging and
+Silver stay clean.
 
 To treat re-loads as updates instead of no-ops, change the writer's conflict
 clause to `DO UPDATE SET updated_ts = now(), ingestion_status = EXCLUDED.ingestion_status`.

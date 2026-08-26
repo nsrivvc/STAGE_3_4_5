@@ -3,7 +3,7 @@ silver_awards_rates.py
 ======================
 Decomposes the AWARDS feed's rates into `<DECOMP_SCHEMA>.awards_rates`.
 
-Source: `awards_rates_dedup`
+Source: `awards_dedup`, exploded on its nested `rates` JSON array.
 Key:    (id, locationpropcode, locationpurpose)
 
 Rates carry no amendment marker, so this reads deduplication(p1) directly.
@@ -24,8 +24,47 @@ class SilverAwardsRates(GrainDecomposition):
     table_name = "awards_rates"
     feed = "awards"
     grain = "rates"
-    source_table = "awards_rates_dedup"
+    source_table = "awards_dedup"
     key_cols_list = ["id", "locationpropcode", "locationpurpose"]
+
+    section = "rates"
+    parent_columns = ["postdatetime", "capacityawarddatetime", "releasetermstartdate", "releasetermenddate"]
+
+    element_keys = [
+        "GS_ID",
+        "Id",
+        "OfferNumber",
+        "BidNumber",
+        "AwardNumber",
+        "BidderDuns",
+        "ReleaserDuns",
+        "TransportationServiceProviderPropCode",
+        "LocationPurpose",
+        "LocationPurposeCodeValue",
+        "LocationName",
+        "LocationPropCode",
+        "IdentificationCodeQualifier",
+        "ReservationRateBasis",
+        "MarketBasedRateIndicator",
+        "SurchargeIndicatorCodeValue",
+        "SurchargeIndicator",
+        "ChargeInformationReferenceNumber",
+        "ChargeCode",
+        "ChargeRate",
+        "AwardRate",
+        "AwardRateIdentificationCode",
+        "MaximumTariffRate",
+        "MaximumTariffRateIdentificationCode",
+        "AwardPercentageOfMaximumTariffRate",
+        "AwardPercentageOfMaximumTariffRateIdentificationCode",
+        "MinimumVolumetricCommitmentPercentage",
+        "IBRAllowableDifferential",
+        "IBRAllowableDifferentialRateFloor",
+        "IBRBidValuePercent",
+        "CreatedDate",
+        "Version_Status",
+        "UpdatedDateTime",
+    ]
 
     columns = [
         "bronze_row_id",

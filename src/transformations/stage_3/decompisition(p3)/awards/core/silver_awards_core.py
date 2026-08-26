@@ -3,7 +3,7 @@ silver_awards_core.py
 =====================
 Decomposes the AWARDS feed's core into `<DECOMP_SCHEMA>.awards_core`.
 
-Source: `awards_core_dedup`
+Source: `awards_dedup`
 Key:    (id)
 
 AWARDS SKIPS ammendments(p2): the feed carries no AmendRptg marker, so there
@@ -29,7 +29,7 @@ class SilverAwardsCore(GrainDecomposition):
     table_name = "awards_core"
     feed = "awards"
     grain = "core"
-    source_table = "awards_core_dedup"
+    source_table = "awards_dedup"
     key_cols_list = ["id"]
 
     drop_columns = ["locations", "rates"]

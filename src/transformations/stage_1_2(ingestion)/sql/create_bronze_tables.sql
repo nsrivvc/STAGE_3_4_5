@@ -1,4 +1,4 @@
-﻿-- Auto-generated from src/bronze/schemas.py — do not hand-edit.
+-- Auto-generated from src/bronze/schemas.py � do not hand-edit.
 -- Regenerate with:  python -m src.bronze.schemas
 
 CREATE SCHEMA IF NOT EXISTS bronze;
@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS bronze."gtran_firm" (
     "otherratesbasis"            TEXT,            -- source type: varchar
     "locations"                  TEXT,            -- source type: json
     "rates"                      TEXT,            -- source type: json
+    "term"                       TEXT,            -- source type: int
+    "reczones"                   TEXT,            -- source type: varchar
+    "delzones"                   TEXT,            -- source type: varchar
     -- ---- pipeline metadata ----
     "raw_record_id"              VARCHAR(256),
     "hash_key"                   VARCHAR(64),
@@ -59,11 +62,57 @@ CREATE TABLE IF NOT EXISTS bronze."gtran_firm" (
     "ingestion_timestamp"        TIMESTAMPTZ,
     "updated_ts"                 TIMESTAMPTZ,
     "ingestion_status"           VARCHAR(32),
-    "raw_payload"                JSONB,
-    CONSTRAINT "uq_gtran_firm_hash" UNIQUE (hash_key)
+    "raw_payload"                JSONB
 );
 CREATE INDEX IF NOT EXISTS "ix_gtran_firm_run" ON bronze."gtran_firm" (pipeline_run_id);
 CREATE INDEX IF NOT EXISTS "ix_gtran_firm_recid" ON bronze."gtran_firm" (raw_record_id);
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "id" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "tspname" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "tspduns" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "tspprop" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "posteddatetime" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "firmid" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "cycle" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "amendrptg" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "amendrptgdesc" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kholdername" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kholder" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kholderprop" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "svcreqk" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "ratesch" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kqtyk" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kstat" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kstatdesc" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kbegdatetime" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kenddatetime" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kendind" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "ngtdrateind" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "ngtdrateinddesc" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "pkgid" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "kroll" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "krolldesc" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "affil" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "affildesc" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "captype" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "captypename" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "captypeloc" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "captypelocdesc" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "osid" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "rte" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "termsnotes" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "createddatetime" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "reclocs" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "dellocs" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "maxratechgd" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "maxtrfrate" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "otherrates" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "otherratesdescription" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "otherratesbasis" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "locations" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "rates" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "term" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "reczones" TEXT;
+ALTER TABLE bronze."gtran_firm" ADD COLUMN IF NOT EXISTS "delzones" TEXT;
 
 CREATE TABLE IF NOT EXISTS bronze."gtran_it" (
     bronze_row_id BIGSERIAL PRIMARY KEY,
@@ -105,6 +154,9 @@ CREATE TABLE IF NOT EXISTS bronze."gtran_it" (
     "dealtype"                   TEXT,            -- source type: varchar
     "locations"                  TEXT,            -- source type: json
     "rates"                      TEXT,            -- source type: json
+    "term"                       TEXT,            -- source type: int
+    "reczones"                   TEXT,            -- source type: varchar
+    "delzones"                   TEXT,            -- source type: varchar
     -- ---- pipeline metadata ----
     "raw_record_id"              VARCHAR(256),
     "hash_key"                   VARCHAR(64),
@@ -115,61 +167,51 @@ CREATE TABLE IF NOT EXISTS bronze."gtran_it" (
     "ingestion_timestamp"        TIMESTAMPTZ,
     "updated_ts"                 TIMESTAMPTZ,
     "ingestion_status"           VARCHAR(32),
-    "raw_payload"                JSONB,
-    CONSTRAINT "uq_gtran_it_hash" UNIQUE (hash_key)
+    "raw_payload"                JSONB
 );
 CREATE INDEX IF NOT EXISTS "ix_gtran_it_run" ON bronze."gtran_it" (pipeline_run_id);
 CREATE INDEX IF NOT EXISTS "ix_gtran_it_recid" ON bronze."gtran_it" (raw_record_id);
-
-CREATE TABLE IF NOT EXISTS bronze."gindex" (
-    bronze_row_id BIGSERIAL PRIMARY KEY,
-    "id"                         TEXT,            -- source type: int
-    "fercid"                     TEXT,            -- source type: varchar
-    "pipe"                       TEXT,            -- source type: varchar
-    "reportdate"                 TEXT,            -- source type: datetime
-    "origrevised"                TEXT,            -- source type: int
-    "tporuom"                    TEXT,            -- source type: varchar
-    "storuom"                    TEXT,            -- source type: varchar
-    "contact"                    TEXT,            -- source type: varchar
-    "contactnumber"              TEXT,            -- source type: varchar
-    "shipper"                    TEXT,            -- source type: varchar
-    "shipperduns"                TEXT,            -- source type: int
-    "ratesched"                  TEXT,            -- source type: varchar
-    "k"                          TEXT,            -- source type: varchar
-    "kstart"                     TEXT,            -- source type: date
-    "kexp"                       TEXT,            -- source type: date
-    "negrate"                    TEXT,            -- source type: varchar
-    "tportmdq"                   TEXT,            -- source type: int
-    "stormsq"                    TEXT,            -- source type: int
-    "agentama"                   TEXT,            -- source type: varchar
-    "agentamaaffiliation"        TEXT,            -- source type: varchar
-    "ptidcode"                   TEXT,            -- source type: varchar
-    "ptname"                     TEXT,            -- source type: varchar
-    "ptidcodequal"               TEXT,            -- source type: varchar
-    "ptidencode"                 TEXT,            -- source type: int
-    "zone"                       TEXT,            -- source type: varchar
-    "loctportmdq"                TEXT,            -- source type: int
-    "locstormsq"                 TEXT,            -- source type: int
-    "createddate"                TEXT,            -- source type: datetime
-    "rateschedid"                TEXT,            -- source type: int
-    "state"                      TEXT,            -- source type: varchar
-    "county"                     TEXT,            -- source type: varchar
-    "dunpce"                     TEXT,            -- source type: int
-    -- ---- pipeline metadata ----
-    "raw_record_id"              VARCHAR(256),
-    "hash_key"                   VARCHAR(64),
-    "pipeline_run_id"            VARCHAR(64),
-    "source_system"              VARCHAR(128),
-    "source_api"                 VARCHAR(256),
-    "source_file_name"           VARCHAR(512),
-    "ingestion_timestamp"        TIMESTAMPTZ,
-    "updated_ts"                 TIMESTAMPTZ,
-    "ingestion_status"           VARCHAR(32),
-    "raw_payload"                JSONB,
-    CONSTRAINT "uq_gindex_hash" UNIQUE (hash_key)
-);
-CREATE INDEX IF NOT EXISTS "ix_gindex_run" ON bronze."gindex" (pipeline_run_id);
-CREATE INDEX IF NOT EXISTS "ix_gindex_recid" ON bronze."gindex" (raw_record_id);
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "id" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "tspname" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "tspduns" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "tspprop" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "posteddatetime" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "interruptibleid" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "cycle" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "amendrptg" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "amendrptgdesc" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "kholdername" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "kholder" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "kholderprop" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "svcreqk" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "ratesch" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "itqtyk" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "kstat" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "kstatdesc" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "kbegdatetime" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "kenddatetime" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "ngtdrateind" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "ngtdrateinddesc" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "pkgid" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "kroll" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "krolldesc" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "affil" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "affildesc" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "termsnotes" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "createddatetime" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "reclocs" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "dellocs" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "maxratechgd" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "maxtrfrate" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "otherrates" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "otherratesdescription" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "otherratesbasis" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "dealtype" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "locations" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "rates" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "term" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "reczones" TEXT;
+ALTER TABLE bronze."gtran_it" ADD COLUMN IF NOT EXISTS "delzones" TEXT;
 
 CREATE TABLE IF NOT EXISTS bronze."gawd" (
     bronze_row_id BIGSERIAL PRIMARY KEY,
@@ -269,11 +311,177 @@ CREATE TABLE IF NOT EXISTS bronze."gawd" (
     "ingestion_timestamp"        TIMESTAMPTZ,
     "updated_ts"                 TIMESTAMPTZ,
     "ingestion_status"           VARCHAR(32),
-    "raw_payload"                JSONB,
-    CONSTRAINT "uq_gawd_hash" UNIQUE (hash_key)
+    "raw_payload"                JSONB
 );
 CREATE INDEX IF NOT EXISTS "ix_gawd_run" ON bronze."gawd" (pipeline_run_id);
 CREATE INDEX IF NOT EXISTS "ix_gawd_recid" ON bronze."gawd" (raw_record_id);
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "gs_id" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "id" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "transportationserviceprovidername" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "transportationserviceproviderpropcode" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "status" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "statuscodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "offernumber" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "bidnumber" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "awardnumber" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "awardquantitycontract" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrindexbasedcapacityreleaseindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrindexbasedcapacityreleaseindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "recallreputindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "recallreputindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "allowablereleaseindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "affiliatedindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "affiliatedindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "righttoamendprimarypointsindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "righttoamendprimarypointsindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "rei_awardingaction" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "rei_storageinventorycondition" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "capacityawarddatetime" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "releasetermstartdate" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "releasetermenddate" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "postdatetime" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "marketbasedrateindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "marketbasedrateindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "prearrangeddealindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "prearrangeddealindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "previouslyreleasedindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "previouslyreleasedindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "permanentreleaseindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "permanentreleaseindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "replacementshipperroleindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "replacementshipperroleindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "storageinventoryconditionedreleaseindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "storageinventoryconditionedreleaseindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "overrunresponsibilityindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "overrunresponsibilityindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "businessdayindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "biddername" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "bidderduns" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "releasername" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "releaserduns" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "bidderphonenumber" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "bidderemailaddress" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "rateformtypecode" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "rateformtypecodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "reservationratebasis" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "reservationratebasiscodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "rateschedule" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "unitprice" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "multiplier" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "monetaryamount" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "releasedesignationacceptablebiddingbasis" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "releasedesignationacceptablebiddingbasiscodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "surchargeindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "surchargeindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "chargeindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "cycleindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "cycleindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrformulaidentifier" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrformulaidentifiercodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrindexmathematicaloperatorindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrindexmathematicaloperatorindicatorcodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrindexreference1" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrindexreference2" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibruniqueformulaspecialterms" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "ibrvariablemathematicaloperatorindicator" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "replacementshippercontractnumber" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "agencyqualifiercode" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "recallreputtermrate" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "righttoamendprimarypointstermsnote" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "specialtermsandmiscellaneousnotesandobligations" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "specialtermsandmiscellaneousnotesstorageinventoryconditions" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "specialtermsandmiscellaneousnotes" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "measurementbasis" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "measurementbasiscodevalue" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "createddate" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "releasercontractnumber" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "releasefullname" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "bidderfullname" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "version_status" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "updateddatetime" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "locations" TEXT;
+ALTER TABLE bronze."gawd" ADD COLUMN IF NOT EXISTS "rates" TEXT;
+
+CREATE TABLE IF NOT EXISTS bronze."gindex" (
+    bronze_row_id BIGSERIAL PRIMARY KEY,
+    "id"                         TEXT,            -- source type: int
+    "fercid"                     TEXT,            -- source type: varchar
+    "pipe"                       TEXT,            -- source type: varchar
+    "reportdate"                 TEXT,            -- source type: datetime
+    "origrevised"                TEXT,            -- source type: int
+    "tporuom"                    TEXT,            -- source type: varchar
+    "storuom"                    TEXT,            -- source type: varchar
+    "contact"                    TEXT,            -- source type: varchar
+    "contactnumber"              TEXT,            -- source type: varchar
+    "shipper"                    TEXT,            -- source type: varchar
+    "shipperduns"                TEXT,            -- source type: int
+    "ratesched"                  TEXT,            -- source type: varchar
+    "k"                          TEXT,            -- source type: varchar
+    "kstart"                     TEXT,            -- source type: date
+    "kexp"                       TEXT,            -- source type: date
+    "negrate"                    TEXT,            -- source type: varchar
+    "tportmdq"                   TEXT,            -- source type: int
+    "stormsq"                    TEXT,            -- source type: int
+    "agentama"                   TEXT,            -- source type: varchar
+    "agentamaaffiliation"        TEXT,            -- source type: varchar
+    "ptidcode"                   TEXT,            -- source type: varchar
+    "ptname"                     TEXT,            -- source type: varchar
+    "ptidcodequal"               TEXT,            -- source type: varchar
+    "ptidencode"                 TEXT,            -- source type: int
+    "zone"                       TEXT,            -- source type: varchar
+    "loctportmdq"                TEXT,            -- source type: int
+    "locstormsq"                 TEXT,            -- source type: int
+    "createddate"                TEXT,            -- source type: datetime
+    "rateschedid"                TEXT,            -- source type: int
+    "state"                      TEXT,            -- source type: varchar
+    "county"                     TEXT,            -- source type: varchar
+    "dunpce"                     TEXT,            -- source type: int
+    -- ---- pipeline metadata ----
+    "raw_record_id"              VARCHAR(256),
+    "hash_key"                   VARCHAR(64),
+    "pipeline_run_id"            VARCHAR(64),
+    "source_system"              VARCHAR(128),
+    "source_api"                 VARCHAR(256),
+    "source_file_name"           VARCHAR(512),
+    "ingestion_timestamp"        TIMESTAMPTZ,
+    "updated_ts"                 TIMESTAMPTZ,
+    "ingestion_status"           VARCHAR(32),
+    "raw_payload"                JSONB
+);
+CREATE INDEX IF NOT EXISTS "ix_gindex_run" ON bronze."gindex" (pipeline_run_id);
+CREATE INDEX IF NOT EXISTS "ix_gindex_recid" ON bronze."gindex" (raw_record_id);
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "id" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "fercid" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "pipe" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "reportdate" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "origrevised" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "tporuom" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "storuom" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "contact" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "contactnumber" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "shipper" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "shipperduns" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "ratesched" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "k" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "kstart" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "kexp" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "negrate" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "tportmdq" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "stormsq" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "agentama" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "agentamaaffiliation" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "ptidcode" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "ptname" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "ptidcodequal" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "ptidencode" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "zone" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "loctportmdq" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "locstormsq" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "createddate" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "rateschedid" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "state" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "county" TEXT;
+ALTER TABLE bronze."gindex" ADD COLUMN IF NOT EXISTS "dunpce" TEXT;
 
 CREATE TABLE IF NOT EXISTS bronze."ingestion_log" (
     log_id BIGSERIAL PRIMARY KEY,

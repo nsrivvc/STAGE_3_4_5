@@ -240,7 +240,7 @@ The rule, per feed:
 * **one or more `add` rows** → only those DUNS are processed
 * **any `remove` row** → that DUNS never passes, even if also added
 
-**Where it is applied.** `Deduplication` and `NestedArrayDeduplication` in
+**Where it is applied.** `Deduplication` in
 `deduplication(p1)` are the only two classes that read a Bronze table — p2, p3,
 stage 4 and stage 5 all read the staging schema those two write. The filter is a
 `WHERE` clause inside their `INSERT`, so it scopes every feed and every grain
@@ -501,17 +501,25 @@ the loader that drives them:
 | `awards.py` | gAWD -> `bronze.gawd` |
 | `ioc.py` | gINDEX -> `bronze.gindex` |
 
-A feed module is a short list of declarations, no code: the envelope its
-records arrive under, which key is the record id, which fields are required,
-and any field the export spells differently from its column (`KQty` fills
-`kqtyk`). Adding a feed is one more file plus one line in `FEEDS`.
+A feed module is a short list of declarations, no code: the words that name it
+in a file name, the envelope its records arrive under, which key is the record
+id, which fields are required, and any field the export spells differently from
+its column (`KQty` fills `kqtyk`). Adding a feed is one more file plus one line
+in `FEEDS`.
+
+**The file name picks the table.** `firms_test.json` goes to `gtran_firm`,
+`interruptibles_*.json` to `gtran_it`, `awards_*.json` to `gawd`, `ioc_*.json`
+to `gindex` — which is how stage 1 already names what it fetches
+(`_fetched_firms.json`). There is nothing else to pass. Matching is on whole
+words, so `capacity_awards.json` is awards and not also interruptible; a name
+that says nothing, or names two feeds, is refused rather than guessed at.
 
 Run it with [`(stage2)json_to_raw.yml`](.github/workflows/(stage2)json_to_raw.yml)
-(inputs: `file`, `feed`, `dry_run`) or directly:
+(inputs: `file`, `dry_run`) or directly:
 
 ```powershell
 python "src\transformations\stage_2\json_to_raw.py" --file "src\transformations\stage_1_2(ingestion)\data\firm_sample_worklow.json"
-python "src\transformations\stage_2\json_to_raw.py" --file <path> --feed ioc --dry-run
+python "src\transformations\stage_2\json_to_raw.py" --file <path> --dry-run
 ```
 
 **The database owns the schema.** The loader reads the target table's columns
@@ -522,8 +530,8 @@ still kept in full in `raw_payload`). It needs the raw table to exist — it
 writes into the Bronze tables, it does not create them.
 
 Every row is stamped with `hash_key`, the content fingerprint stage 3's
-deduplication compares rows on, and the raw tables carry `UNIQUE (hash_key)` —
-so a repeat load skips records already there instead of failing.
+deduplication compares rows on. Bronze keeps every load, duplicates included —
+stage 3's deduplication(p1) is the one place duplicate content is dropped.
 
 This overlaps `bronze_ingest_*.yml` on purpose. Those run stage 1 **and** 2
 together (fetch from the mock API, then load); this one is the load half by

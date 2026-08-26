@@ -10,7 +10,7 @@ where the Azure SQL implementation slots in later — the rest of the codebase
 databases means adding one writer class and flipping DB_TYPE.
 
 Idempotency is implemented in the writer via dialect-specific upsert:
-  * Postgres:  INSERT ... ON CONFLICT (hash_key) DO NOTHING
+  * Postgres:  plain INSERT -- Bronze keeps every batch; stage 3 dedups
   * Azure SQL: MERGE ... WHEN NOT MATCHED THEN INSERT   (see stub)
 """
 
@@ -91,8 +91,7 @@ class PostgresBronzeWriter(BronzeWriter):
         placeholders = ", ".join(["%s"] * len(columns))
         stmt = (
             f"INSERT INTO {self._q(self._schema)}.{self._q(table)} "
-            f"({col_sql}) VALUES ({placeholders}) "
-            f"ON CONFLICT (hash_key) DO NOTHING"
+            f"({col_sql}) VALUES ({placeholders})"
         )
 
         params: List[Sequence[Any]] = [
@@ -139,11 +138,9 @@ class AzureSqlBronzeWriter(BronzeWriter):
       * Connect with the ODBC connection string (AZURE_SQL_CONNECTION_STRING).
       * Replace JSONB with NVARCHAR(MAX) holding json.dumps(raw_payload), and
         store ingestion timestamps as DATETIME2.
-      * Replace `INSERT ... ON CONFLICT (hash_key) DO NOTHING` with a MERGE:
-
-            MERGE bronze.<table> AS tgt
-            USING (VALUES (...)) AS src (...columns...)
-               ON tgt.hash_key = src.hash_key
+      * The INSERT itself is plain and ports as-is. (If you ever reintroduce
+        insert-time dedup, SQL Server's equivalent of ON CONFLICT is MERGE
+        ... ON tgt.hash_key = src.hash_key.)
             WHEN NOT MATCHED THEN
                INSERT (...) VALUES (...);
 

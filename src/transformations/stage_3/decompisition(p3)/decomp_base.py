@@ -1,27 +1,35 @@
 """
 decomp_base.py
 ==============
-Shared base for the locations decomposition. Not a transformation itself -- it
-registers nothing.
+Shared base for the decomposition phase (p3 of stage 3). Not a transformation
+itself -- it registers nothing.
 
 WHAT IT DOES
 ------------
-Projects a feed's Bronze locations table into a typed staging table in
-DECOMP_SCHEMA, one row per location, matching the agreed schema:
+Takes the one row-per-contract table each feed has after deduplication(p1) /
+ammendments(p2) and splits it into the grains stage 4 and 5 read:
 
-    index LongType, transactiontermbegindatetime, transactiontermenddatetime,
-    segment, <contract_id>, uniqueid, pk, <qty>, seasnlst, seasnlend,
-    uniquekey, id, posteddatetime, kentbegdatetime, kentenddatetime,
-    captypename, loc, locname, locpurp, locpurpdesc, loczn, locqti,
-    locqtidesc, tspduns, tspname, createddatetime
+    core       one row per contract      <- ammendments(p2) output (firm, IT)
+                                            deduplication(p1) output (awards)
+    locations  one row per location      <- exploded out of the contract's
+    rates      one row per rate             nested JSON, see below
 
-Two feeds differ only in two column names, so they are class attributes:
+WHERE THE NESTED GRAINS COME FROM
+---------------------------------
+There is no Bronze locations or rates table. Ingestion lands each feed as ONE
+raw table (gtran_firm, gtran_it, gawd) whose rows carry the contract header plus
+nested `locations` and `rates` JSON arrays, and deduplication(p1) passes those
+rows through whole. So the nested grains enter the pipeline HERE: `section`,
+`parent_columns` and `element_keys` on a subclass describe one element, and
+`NestedExplosion` turns the array into one row per element as part of the same
+statement that projects it onto the grain's schema. No intermediate table.
 
-    firm           firmid          / kqtyloc   <- firm_locations_dedup
-    interruptible  interruptibleid / itqtyloc  <- interruptible_locations_dedup
-
-(Both dedup tables are exploded out of the raw feed table's nested `locations`
-JSON by deduplication(p1) -- there is no separate Bronze locations table.)
+COLUMNS COME FROM THE JSON. `element_keys` lists one element's keys verbatim
+(CamelCase, as they appear in the payload); each becomes a column named
+key.lower(). A key absent from some element yields NULL rather than failing.
+`parent_columns` carries the contract-row fields that do not exist inside an
+element but that the grain's schema needs (the contract id, posteddatetime, and
+for rates tspduns/tspname).
 
 WHY IT WRITES OUTSIDE THE SILVER SCHEMA
 ---------------------------------------
@@ -42,7 +50,7 @@ TWO DELIBERATE DEPARTURES FROM THE PYSPARK SCHEMA
 
 DEDUPE IS NOT OPTIONAL
 ----------------------
-The p1 output accumulates one row per distinct element content ever seen, so
+The p1 output accumulates one row per distinct contract content ever seen, so
 the same (contract, uniqueid) pair can appear under several content versions.
 Without latest-wins dedupe the upsert would touch the same target row twice in
 one statement, which Postgres rejects outright.
@@ -95,6 +103,23 @@ AUDIT_COLUMNS: List[Tuple[str, str]] = [
     ("ingestion_timestamp", "TIMESTAMPTZ"),
 ]
 
+#: Audit columns the explosion stamps onto every element row. All but two are
+#: copied from the parent contract row; the exceptions are `hash_key` (the
+#: ELEMENT's own content fingerprint) and `raw_payload` (the element's own JSON
+#: object, not the whole contract's).
+ELEMENT_AUDIT_COLUMNS: List[Tuple[str, str]] = [
+    ("raw_record_id", "TEXT"),
+    ("hash_key", "TEXT"),
+    ("pipeline_run_id", "TEXT"),
+    ("source_system", "TEXT"),
+    ("source_api", "TEXT"),
+    ("source_file_name", "TEXT"),
+    ("ingestion_timestamp", "TIMESTAMPTZ"),
+    ("updated_ts", "TIMESTAMPTZ"),
+    ("ingestion_status", "TEXT"),
+    ("raw_payload", "JSONB"),
+]
+
 #: `index` is a SQL keyword; quote every identifier that needs it.
 _NEEDS_QUOTING = {"index"}
 
@@ -105,7 +130,7 @@ _NEEDS_QUOTING = {"index"}
 #:
 #: The transaction term columns are renames: the agreed schema exposes the
 #: contract's kbegdatetime / kenddatetime (carried onto every exploded location
-#: row by deduplication(p1)) under these names.
+#: row as a parent column) under these names.
 SELECT_OVERRIDES = {
     "index": "NULLIF(\"index\", '')::BIGINT",
     "transactiontermbegindatetime": "kbegdatetime",
@@ -118,19 +143,103 @@ def _q(name: str) -> str:
 
 
 def _select_expr(name: str) -> str:
-    """How a column is read out of the source table."""
+    """How a column is read out of the source."""
     return SELECT_OVERRIDES.get(name, _q(name))
 
 
-class LocationsDecomposition(SilverTransformation):
+class NestedExplosion:
+    """Turns a contract row's nested JSON array into one row per element.
+
+    Mixed into the grain classes below. A subclass that sets `section` reads an
+    exploded view of `source_table`; one that leaves it blank reads
+    `source_table` directly, which is what the core grain does.
+    """
+
+    section: str = ""                # raw_payload key: "locations" | "rates"
+    parent_columns: List[str] = []   # contract-row columns copied onto each element
+    element_keys: List[str] = []     # JSON keys of one element; column = key.lower()
+
+    @property
+    def exploded(self) -> bool:
+        return bool(self.section)
+
+    @property
+    def exploded_columns(self) -> List[Tuple[str, str]]:
+        """(name, type) for every column the explosion produces, in order."""
+        return (
+            [("bronze_row_id", "BIGINT")]
+            + [(c, "TEXT") for c in self.parent_columns]
+            + [(k.lower(), "TEXT") for k in self.element_keys]
+            + ELEMENT_AUDIT_COLUMNS
+        )
+
+    def _section_expr(self) -> str:
+        """The nested array, found CASE-INSENSITIVELY in `raw_payload`.
+
+        `raw_payload` preserves the producer's original keys verbatim, and
+        producers disagree on case: the mock fixtures ship `locations` /
+        `rates`, the live NatGasHub export ships `Locations` / `Rates`. A plain
+        `raw_payload -> 'locations'` silently matches nothing against the
+        latter -- contracts would land in Bronze and then produce ZERO location
+        and rate rows, with no error anywhere. That is the worst kind of
+        failure, so the lookup matches on lower(key) instead.
+        """
+        return (
+            "(SELECT v FROM jsonb_each(s.raw_payload) AS e(k, v) "
+            f"WHERE lower(e.k) = '{self.section.lower()}' LIMIT 1)"
+        )
+
+    def _explode_sql(self) -> str:
+        """A SELECT producing one row per array element, aliased to
+        `exploded_columns`. Used in place of a source table."""
+        select_parts = (
+            ["s.bronze_row_id"]
+            + [f"s.{c}" for c in self.parent_columns]
+            + [f"el ->> '{k}' AS {_q(k.lower())}" for k in self.element_keys]
+            + [
+                "s.raw_record_id",
+                "md5(el::text) AS hash_key",   # element-level content fingerprint
+                "s.pipeline_run_id",
+                "s.source_system",
+                "s.source_api",
+                "s.source_file_name",
+                "s.ingestion_timestamp",
+                "s.updated_ts",
+                "s.ingestion_status",
+                "el AS raw_payload",           # the element's JSON, not the contract's
+            ]
+        )
+        sel = ",\n                   ".join(select_parts)
+        return f"""SELECT {sel}
+            FROM {self.source_schema}.{self.source_table} s
+            CROSS JOIN LATERAL jsonb_array_elements({self._section_expr()}) AS el
+            WHERE jsonb_typeof({self._section_expr()}) = 'array'"""
+
+    def _source_sql(self) -> str:
+        """What the grain reads: the exploded elements, or the table as-is."""
+        if self.exploded:
+            return f"(\n            {self._explode_sql()}\n        ) s"
+        return f"{self.source_schema}.{self.source_table} s"
+
+
+class LocationsDecomposition(NestedExplosion, SilverTransformation):
+    """The locations grain, projected onto the agreed schema.
+
+    Two feeds differ only in two column names, so they are class attributes:
+
+        firm           firmid          / kqtyloc
+        interruptible  interruptibleid / itqtyloc
+    """
+
     # --- set these in each subclass ------------------------------------------
     feed: str = ""              # "firm" | "interruptible"
-    source_table: str = ""      # deduplication(p1) output table to read
+    source_table: str = ""      # the feed's one deduplicated contract table
     contract_id_col: str = ""   # firmid | interruptibleid
     qty_col: str = ""           # kqtyloc | itqtyloc
 
     def __init__(self) -> None:
-        for attr in ("feed", "source_table", "contract_id_col", "qty_col"):
+        for attr in ("feed", "source_table", "contract_id_col", "qty_col",
+                     "section", "element_keys"):
             if not getattr(self, attr):
                 raise ValueError(f"{type(self).__name__} must set `{attr}`.")
         self.source = self.feed
@@ -144,12 +253,8 @@ class LocationsDecomposition(SilverTransformation):
 
     @property
     def source_schema(self) -> str:
-        """Reads deduplication(p1) output, which also lives in DECOMP_SCHEMA.
-
-        Phase order is deduplication(p1) -> ammendments(p2) -> this. p2 has no
-        code yet, so this consumes p1 directly; when p2 lands, point
-        `source_table` at its output instead.
-        """
+        """Reads the earlier stage-3 phases' output, which also lives in
+        DECOMP_SCHEMA."""
         return self.decomp_schema
 
     @property
@@ -189,12 +294,15 @@ class LocationsDecomposition(SilverTransformation):
         updates = sep.join(f"{_q(n):<24} = EXCLUDED.{_q(n)}" for n in updatable)
 
         return f"""
-        WITH latest AS (
+        WITH exploded AS (
+            {self._explode_sql()}
+        ),
+        latest AS (
             SELECT * FROM (
                 SELECT s.*, row_number() OVER (
                     PARTITION BY {self.contract_id_col}, uniqueid
                     ORDER BY ingestion_timestamp DESC, bronze_row_id DESC) AS _rn
-                FROM {self.source_schema}.{self.source_table} s
+                FROM exploded s
             ) x WHERE _rn = 1
         )
         INSERT INTO {self.target_schema}.{self.table_name} AS tgt (
@@ -208,7 +316,7 @@ class LocationsDecomposition(SilverTransformation):
         """
 
 
-class GrainDecomposition(SilverTransformation):
+class GrainDecomposition(NestedExplosion, SilverTransformation):
     """Generic decomposition for the core and rates grains.
 
     Locations has an agreed PySpark schema and its own typed class above. Core
@@ -220,16 +328,17 @@ class GrainDecomposition(SilverTransformation):
     Sources differ by grain, which is what the phase order dictates:
 
         core       <- ammendments(p2) output, so the contract history is already
-                      folded into one current row per contract
-        rates      <- deduplication(p1) output, since rates carry no amendment
-                      marker of their own
+                      folded into one current row per contract (awards have no
+                      amendment marker, so they come straight from p1)
+        rates      <- the same deduplicated contract table, exploded on its
+                      nested `rates` array (set `section`)
 
     SPEC: when core/rates get an agreed schema like locations has, give them a
     typed subclass of their own and retire this passthrough.
     """
 
     feed: str = ""
-    grain: str = ""             # "core" | "rates"
+    grain: str = ""             # "core" | "rates" | "locations"
     source_table: str = ""
     key_cols_list: List[str] = []
     columns: List[str] = []
@@ -239,8 +348,10 @@ class GrainDecomposition(SilverTransformation):
     #: `columns` is not enough to keep one out of the target -- it would just
     #: sit there NULL. These are dropped after the clone.
     #:
-    #: The awards feed needs this: its Bronze row keeps the nested `locations`
-    #: and `rates` JSON alongside the contract fields, and the core grain's
+    #: Only applies to a non-exploded grain: an exploded one builds its table
+    #: from `columns` directly and so never gains a column it did not ask for.
+    #: The awards core grain needs it -- its Bronze row keeps the nested
+    #: `locations` and `rates` JSON alongside the contract fields, and the
     #: agreed schema excludes both (they become their own grains).
     drop_columns: List[str] = []
 
@@ -262,16 +373,28 @@ class GrainDecomposition(SilverTransformation):
 
     def create_table_sql(self) -> str:
         key = ", ".join(self.key_cols_list)
-        drops = "".join(
-            f"\n        ALTER TABLE {self.target_schema}.{self.table_name} "
-            f"DROP COLUMN IF EXISTS {c};"
-            for c in self.drop_columns
-        )
+
+        if self.exploded:
+            # No table to clone: the explosion is a query, so the grain's own
+            # column list defines the target, typed from what it produces.
+            types = dict(self.exploded_columns)
+            cols = ",\n            ".join(
+                f"{_q(c):<26} {types.get(c, 'TEXT')}" for c in self.columns)
+            body = f"{cols},"
+            drops = ""
+        else:
+            body = f"LIKE {self.source_schema}.{self.source_table},"
+            drops = "".join(
+                f"\n        ALTER TABLE {self.target_schema}.{self.table_name} "
+                f"DROP COLUMN IF EXISTS {c};"
+                for c in self.drop_columns
+            )
+
         return f"""
         CREATE SCHEMA IF NOT EXISTS {self.target_schema};
 
         CREATE TABLE IF NOT EXISTS {self.target_schema}.{self.table_name} (
-            LIKE {self.source_schema}.{self.source_table},
+            {body}
             decomp_loaded_ts         TIMESTAMPTZ DEFAULT now(),
             CONSTRAINT uq_{self.table_name}
                 UNIQUE NULLS NOT DISTINCT ({key})
@@ -282,9 +405,9 @@ class GrainDecomposition(SilverTransformation):
     def transform_sql(self) -> str:
         key = ", ".join(self.key_cols_list)
         sep = ",\n            "
-        cols = sep.join(self.columns)
+        cols = sep.join(_q(c) for c in self.columns)
         updatable = [c for c in self.columns if c not in self.key_cols_list]
-        updates = sep.join(f"{c:<26} = EXCLUDED.{c}" for c in updatable)
+        updates = sep.join(f"{_q(c):<26} = EXCLUDED.{_q(c)}" for c in updatable)
         # Latest wins per key, so a re-run cannot hit the same target row twice.
         return f"""
         WITH latest AS (
@@ -292,7 +415,7 @@ class GrainDecomposition(SilverTransformation):
                 SELECT s.*, row_number() OVER (
                     PARTITION BY {key}
                     ORDER BY ingestion_timestamp DESC, bronze_row_id DESC) AS _rn
-                FROM {self.source_schema}.{self.source_table} s
+                FROM {self._source_sql()}
             ) x WHERE _rn = 1
         )
         INSERT INTO {self.target_schema}.{self.table_name} AS tgt (

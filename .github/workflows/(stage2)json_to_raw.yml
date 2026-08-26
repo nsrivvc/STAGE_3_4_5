@@ -6,19 +6,23 @@ name: (stage2)json-to-raw
 # ONE WORKFLOW FOR EVERY FEED, unlike stages 3-5. Those split per feed because
 # each feed runs different transformations; stage 2 runs the same code for all
 # four -- the per-feed differences live in stage_2/firm.py, interruptible.py,
-# awards.py and ioc.py, and the columns come from the database. A per-feed copy
-# of this file would differ only in two input values, so pass them instead:
+# awards.py and ioc.py, and the columns come from the database.
 #
-#   feed: firm | interruptible | awards | ioc  -> bronze.gtran_firm / gtran_it
-#                                                 / gawd / gindex
-#   file: whichever JSON to load
+# There is no feed to choose: the FILE NAME says which one it is. firms_*.json
+# goes to gtran_firm, interruptibles_*.json to gtran_it, awards_*.json to gawd,
+# ioc_*.json to gindex -- which is exactly how stage 1 names what it fetches.
+# Point `file` at whichever JSON to load and that is the whole input.
 #
-# The default file is the committed firm sample, so a plain "Run workflow" does
-# something useful with no arguments. Point `file` at stage 1's output
+# A file whose name doesn't say, or names two feeds, is refused rather than
+# guessed at. Rename it after its feed.
+#
+# The default is the committed firm sample, so a plain "Run workflow" does
+# something useful with no arguments. Point it at stage 1's output
 # (data/_fetched_firms.json) to load a freshly fetched feed instead.
 #
-# Re-running is safe: the raw tables carry UNIQUE (hash_key), so a repeat load
-# skips records already there rather than raising.
+# Re-running a file loads it again: Bronze keeps every batch, duplicates
+# included. Stage 3's deduplication(p1) is where duplicate content is dropped,
+# so staging and Silver stay clean either way.
 on:
   workflow_dispatch:
     inputs:
@@ -26,17 +30,6 @@ on:
         description: "Path to the JSON file (repo-relative)"
         required: true
         default: "src/transformations/stage_1_2(ingestion)/data/firm_sample_worklow.json"
-      feed:
-        description: "Target feed ('auto' identifies it from the file itself)"
-        required: true
-        default: "firm"
-        type: choice
-        options:
-          - firm
-          - interruptible
-          - awards
-          - ioc
-          - auto
       dry_run:
         description: "Convert and report without writing anything"
         required: false
@@ -51,19 +44,14 @@ on:
         required: false
         type: string
         default: "src/transformations/stage_1_2(ingestion)/data/firm_sample_worklow.json"
-      feed:
-        required: false
-        type: string
-        default: "firm"
       dry_run:
         required: false
         type: boolean
         default: false
 
-# Per feed, so the feeds never block each other but a run never collides with
-# itself mid-write.
+# One stage 2 load at a time, so a run never collides with itself mid-write.
 concurrency:
-  group: stage2-${{ inputs.feed }}
+  group: stage2
   cancel-in-progress: false
 
 jobs:
@@ -105,16 +93,12 @@ jobs:
           fi
           echo "loading $(wc -c < "${{ inputs.file }}") bytes from ${{ inputs.file }}"
 
-      # --feed is omitted for 'auto' so the script identifies the feed from the
-      # payload itself. Built as an array because the sample path contains
-      # parentheses, and because "[ cond ] && ARGS+=..." would exit non-zero on
-      # a false condition and fail the step under bash -e.
+      # Built as an array because the sample path contains parentheses, and
+      # because "[ cond ] && ARGS+=..." would exit non-zero on a false
+      # condition and fail the step under bash -e.
       - name: Write JSON to its raw table
         run: |
           ARGS=(--file "${{ inputs.file }}")
-          if [ "${{ inputs.feed }}" != "auto" ]; then
-            ARGS+=(--feed "${{ inputs.feed }}")
-          fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             ARGS+=(--dry-run)
           fi

@@ -4,7 +4,7 @@ silver_firm_core_amended.py
 Resolves the FIRM feed's contract posting history into one current row per
 contract, keyed on (firmid, tspduns).
 
-Reads the deduplication(p1) output `firm_core_dedup`; writes
+Reads the deduplication(p1) output `firm_dedup`; writes
 `<DECOMP_SCHEMA>.firm_core_amended`, which decompisition(p3) can then use as the
 authoritative contract header.
 
@@ -25,7 +25,7 @@ class SilverFirmCoreAmended(ContractAmendments):
     name = "silver_firm_core_amended"
     table_name = "firm_core_amended"
     feed = "firm"
-    source_table = "firm_core_dedup"
+    source_table = "firm_dedup"
     contract_id_col = "firmid"
 
     columns = [

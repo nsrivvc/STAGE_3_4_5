@@ -12,6 +12,7 @@ a feedType (or be told which feed it is with --feed).
 
 NAME = "gTRAN_IT"
 TABLE = "gtran_it"
+FILE_WORDS = ("interruptible", "interruptibles", "it")
 RECORD_KEYS = ("Interruptibles", "contracts")
 ID_FIELD = "Id"
 REQUIRED = ("Id", "InterruptibleId")

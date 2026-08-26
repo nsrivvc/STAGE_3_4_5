@@ -17,7 +17,7 @@ Idempotency hash
 ----------------
 hash_key = SHA-256 over the canonical JSON of the record's *business* values
 only (metadata excluded). Re-ingesting byte-identical data therefore produces
-the same hash, and the UNIQUE(hash_key) constraint makes the load a no-op.
+the same hash, which stage 3's deduplication(p1) uses to drop duplicates.
 (The sheet's sample hashes are SHA-1/40-char; SHA-256 is used here for lower
 collision risk. Swap hashlib.sha256 -> hashlib.sha1 to match those exactly.)
 """

@@ -4,7 +4,7 @@ silver_interruptible_core_amended.py
 Resolves the INTERRUPTIBLE feed's contract posting history into one current row per
 contract, keyed on (interruptibleid, tspduns).
 
-Reads the deduplication(p1) output `interruptible_core_dedup`; writes
+Reads the deduplication(p1) output `interruptible_dedup`; writes
 `<DECOMP_SCHEMA>.interruptible_core_amended`, which decompisition(p3) can then use as the
 authoritative contract header.
 
@@ -25,7 +25,7 @@ class SilverInterruptibleCoreAmended(ContractAmendments):
     name = "silver_interruptible_core_amended"
     table_name = "interruptible_core_amended"
     feed = "interruptible"
-    source_table = "interruptible_core_dedup"
+    source_table = "interruptible_dedup"
     contract_id_col = "interruptibleid"
 
     columns = [

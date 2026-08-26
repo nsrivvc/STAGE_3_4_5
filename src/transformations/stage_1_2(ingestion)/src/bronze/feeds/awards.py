@@ -7,7 +7,7 @@ No TSP header at the payload level: each award carries its own TSP fields, so
 `header_keys` is empty.
 
 Nested `locations` and `rates` are exploded in Silver by stage 3 into
-awards_locations_dedup / awards_rates_dedup. The award-level row keeps them as
+awards_locations / awards_rates. The award-level row keeps them as
 JSON text columns; stage 3's decomposition drops those two columns from
 awards_core, since the agreed core schema excludes them.
 """

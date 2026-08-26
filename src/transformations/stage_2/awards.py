@@ -12,6 +12,7 @@ text on the row for stage 3 to fan out.
 
 NAME = "gAWD"
 TABLE = "gawd"
+FILE_WORDS = ("award", "awards")
 RECORD_KEYS = ("Awards", "awards")
 ID_FIELD = "Id"
 REQUIRED = ("Id", "AwardNumber")

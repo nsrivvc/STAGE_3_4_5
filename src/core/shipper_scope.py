@@ -17,13 +17,13 @@ without a driver installed, exactly like the rest of core/.
 
 WHERE THE PREDICATE IS APPLIED
 ------------------------------
-Deduplication and NestedArrayDeduplication (stage 3, deduplication(p1)) are the
-ONLY two classes in the pipeline that read a Bronze table -- p2, p3, stage 4 and
-stage 5 all read the staging schema those two write. So filtering there is what
-makes the scope hold for every feed and every grain (core / locations / rates)
-with no per-transformation code, and it is why the scope cannot be a separate
-job: the filter has to run inside the same transaction as the dedup INSERT, or
-out-of-scope rows land in staging before anything else can react.
+Deduplication (stage 3, deduplication(p1)) is the ONLY class in the pipeline
+that reads a Bronze table -- p2, p3, stage 4 and stage 5 all read the staging
+schema it writes. So filtering there is what makes the scope hold for every feed
+and every grain (core / locations / rates) with no per-transformation code, and
+it is why the scope cannot be a separate job: the filter has to run inside the
+same transaction as the dedup INSERT, or out-of-scope rows land in staging
+before anything else can react.
 
 THE RULE
 --------
