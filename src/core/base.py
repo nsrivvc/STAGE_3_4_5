@@ -51,6 +51,13 @@ class PipelineTransformation(ABC):
     # rather than waiting for all of them.
     sources_required: bool = True
 
+    # When True the target table is STATE the transformation owns across runs
+    # (e.g. the ammendments(p2) Current/Void version history): the runner never
+    # drops it on --reload and never load-once skips it -- every run executes
+    # and folds in whatever is new. The transformation must therefore be a
+    # no-op when nothing new exists. Rebuild by dropping the table manually.
+    incremental: bool = False
+
     # Which of the four JSON source feeds these rows come from: "firm",
     # "interruptible" (aka IT), "awards" or "ioc". Used to partition the Parquet
     # export by feed. Leave empty for anything genuinely cross-feed (e.g. the

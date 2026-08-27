@@ -177,15 +177,24 @@ def run_one(name: str, ctx: "ExportContext | None" = None, reload: bool = False)
                 return Result(name, "skipped", 0, time.perf_counter() - start, msg)
 
             if _silver_table_exists(conn, t):
-                if not reload:
+                if t.incremental:
+                    # The table is state the transformation owns across runs
+                    # (e.g. the ammendments(p2) version history): never dropped
+                    # on --reload, never load-once skipped. The run itself
+                    # decides what is new and folds it in.
+                    log.info("[%s] incremental — keeping %s.%s and folding in "
+                             "new rows", name, t.target_schema, t.table_name)
+                elif not reload:
                     msg = f"target table already exists: {t.target_schema}.{t.table_name}"
                     log.info("[%s] skipped — %s", name, msg)
                     return Result(name, "skipped", 0, time.perf_counter() - start, msg)
-                # --reload: drop and rebuild so the table refreshes from source
-                # and produces a Parquet export. Inside the same transaction, so
-                # a failed rebuild leaves the existing table untouched.
-                log.warning("[%s] reload - dropping %s.%s", name, t.target_schema, t.table_name)
-                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {t.target_schema}.{t.table_name}")
+                else:
+                    # --reload: drop and rebuild so the table refreshes from
+                    # source and produces a Parquet export. Inside the same
+                    # transaction, so a failed rebuild leaves the existing
+                    # table untouched.
+                    log.warning("[%s] reload - dropping %s.%s", name, t.target_schema, t.table_name)
+                    conn.exec_driver_sql(f"DROP TABLE IF EXISTS {t.target_schema}.{t.table_name}")
 
             rows = t.run(conn, _export_context(t, ctx))
         dur = time.perf_counter() - start

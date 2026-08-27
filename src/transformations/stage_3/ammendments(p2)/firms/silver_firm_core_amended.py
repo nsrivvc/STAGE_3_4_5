@@ -1,17 +1,20 @@
 """
 silver_firm_core_amended.py
 ===========================
-Resolves the FIRM feed's contract posting history into one current row per
-contract, keyed on (firmid, tspduns).
+Resolves the FIRM feed's contract posting history into one CURRENT row per
+contract, keyed on (firmid, tspduns), with superseded versions kept as Void
+(see amend_base.py for the whole flow).
 
-Reads the deduplication(p1) output `firm_dedup`; writes
-`<DECOMP_SCHEMA>.firm_core_amended`, which decompisition(p3) can then use as the
-authoritative contract header.
+Reads the deduplication(p1) output `firm_dedup` (fresh rows only); writes
+`<DECOMP_SCHEMA>.firm_core_amended`, which decompisition(p3) reads filtered to
+version_status = 'Current'. Flips the consumed rows' freshness marker to
+'processed' in firm_dedup and bronze.gtran_firm.
 
-The column list below is the full 53-column shape of bronze.gtran_firm. It is
-explicit rather than introspected so the SQL can be generated without a database
-connection (`--show-sql` works offline). If the Bronze schema gains a column,
-add it here or it will not be carried through the fold.
+The column list below is the full 58-column shape of bronze.gtran_firm
+(everything except the 'status' freshness marker, which is bookkeeping, not
+data). It is explicit rather than introspected so the SQL can be generated
+without a database connection (`--show-sql` works offline). If the Bronze
+schema gains a column, add it here or it will not be carried through the fold.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ class SilverFirmCoreAmended(ContractAmendments):
     table_name = "firm_core_amended"
     feed = "firm"
     source_table = "firm_dedup"
+    raw_table = "gtran_firm"
     contract_id_col = "firmid"
 
     columns = [
@@ -72,6 +76,11 @@ class SilverFirmCoreAmended(ContractAmendments):
         "otherrates",
         "otherratesdescription",
         "otherratesbasis",
+        "locations",
+        "rates",
+        "term",
+        "reczones",
+        "delzones",
         "raw_record_id",
         "hash_key",
         "pipeline_run_id",

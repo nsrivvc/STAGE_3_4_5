@@ -1,17 +1,20 @@
 """
 silver_interruptible_core_amended.py
 ====================================
-Resolves the INTERRUPTIBLE feed's contract posting history into one current row per
-contract, keyed on (interruptibleid, tspduns).
+Resolves the INTERRUPTIBLE feed's contract posting history into one CURRENT
+row per contract, keyed on (interruptibleid, tspduns), with superseded
+versions kept as Void (see amend_base.py for the whole flow).
 
-Reads the deduplication(p1) output `interruptible_dedup`; writes
-`<DECOMP_SCHEMA>.interruptible_core_amended`, which decompisition(p3) can then use as the
-authoritative contract header.
+Reads the deduplication(p1) output `interruptible_dedup` (fresh rows only);
+writes `<DECOMP_SCHEMA>.interruptible_core_amended`, which decompisition(p3)
+reads filtered to version_status = 'Current'. Flips the consumed rows'
+freshness marker to 'processed' in interruptible_dedup and bronze.gtran_it.
 
-The column list below is the full 47-column shape of bronze.gtran_it. It is
-explicit rather than introspected so the SQL can be generated without a database
-connection (`--show-sql` works offline). If the Bronze schema gains a column,
-add it here or it will not be carried through the fold.
+The column list below is the full 52-column shape of bronze.gtran_it
+(everything except the 'status' freshness marker, which is bookkeeping, not
+data). It is explicit rather than introspected so the SQL can be generated
+without a database connection (`--show-sql` works offline). If the Bronze
+schema gains a column, add it here or it will not be carried through the fold.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ class SilverInterruptibleCoreAmended(ContractAmendments):
     table_name = "interruptible_core_amended"
     feed = "interruptible"
     source_table = "interruptible_dedup"
+    raw_table = "gtran_it"
     contract_id_col = "interruptibleid"
 
     columns = [
@@ -66,6 +70,11 @@ class SilverInterruptibleCoreAmended(ContractAmendments):
         "otherratesdescription",
         "otherratesbasis",
         "dealtype",
+        "locations",
+        "rates",
+        "term",
+        "reczones",
+        "delzones",
         "raw_record_id",
         "hash_key",
         "pipeline_run_id",

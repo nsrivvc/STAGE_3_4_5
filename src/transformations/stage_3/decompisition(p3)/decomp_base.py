@@ -159,6 +159,13 @@ class NestedExplosion:
     parent_columns: List[str] = []   # contract-row columns copied onto each element
     element_keys: List[str] = []     # JSON keys of one element; column = key.lower()
 
+    #: Optional predicate on the source rows. The core grains read the
+    #: ammendments(p2) output, which is a VERSION HISTORY -- they must see only
+    #: the Current version of each contract, never the Void ones. The exploded
+    #: grains read the p1 dedup table, which carries no versions, so they leave
+    #: this empty.
+    source_where: str = ""
+
     @property
     def exploded(self) -> bool:
         return bool(self.section)
@@ -216,9 +223,13 @@ class NestedExplosion:
             WHERE jsonb_typeof({self._section_expr()}) = 'array'"""
 
     def _source_sql(self) -> str:
-        """What the grain reads: the exploded elements, or the table as-is."""
+        """What the grain reads: the exploded elements, or the table --
+        narrowed by `source_where` when the grain sets one."""
         if self.exploded:
             return f"(\n            {self._explode_sql()}\n        ) s"
+        if self.source_where:
+            return (f"(SELECT * FROM {self.source_schema}.{self.source_table} "
+                    f"WHERE {self.source_where}) s")
         return f"{self.source_schema}.{self.source_table} s"
 
 

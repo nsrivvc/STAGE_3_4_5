@@ -3,8 +3,13 @@ silver_firm_core.py
 ===================
 Decomposes the FIRM feed's core into `<DECOMP_SCHEMA>.firm_core`.
 
-Source: `firm_core_amended` (ammendments(p2) output -- the folded contract header)
+Source: `firm_core_amended` (ammendments(p2) output -- the folded contract
+        header). That table is a VERSION HISTORY, so `source_where` narrows the
+        read to each contract's Current row; the Void versions stay behind.
 Key:    (firmid, tspduns)
+
+`drop_columns` removes the nested `locations` / `rates` JSON (they become their
+own grains) and the version bookkeeping, which is p2's concern, not a grain's.
 
 Column list is explicit rather than introspected so `--show-sql` works without a
 database. If the upstream table gains a column, add it here or it is not carried.
@@ -24,6 +29,9 @@ class SilverFirmCore(GrainDecomposition):
     grain = "core"
     source_table = "firm_core_amended"
     key_cols_list = ["firmid", "tspduns"]
+
+    source_where = "version_status = 'Current'"
+    drop_columns = ["locations", "rates", "version_status", "voided_ts"]
 
     columns = [
         "bronze_row_id",
@@ -69,6 +77,9 @@ class SilverFirmCore(GrainDecomposition):
         "otherrates",
         "otherratesdescription",
         "otherratesbasis",
+        "term",
+        "reczones",
+        "delzones",
         "raw_record_id",
         "hash_key",
         "pipeline_run_id",
