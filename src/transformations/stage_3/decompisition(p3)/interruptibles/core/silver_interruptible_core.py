@@ -3,7 +3,7 @@ silver_interruptible_core.py
 ============================
 Decomposes the INTERRUPTIBLE feed's core into `<DECOMP_SCHEMA>.interruptible_core`.
 
-Source: `interruptible_core_amended` (ammendments(p2) output -- the folded
+Source: `interruptible_amended` (ammendments(p2) output -- the folded
         contract header). That table is a VERSION HISTORY, so `source_where`
         narrows the read to each contract's Current row; the Void versions
         stay behind.
@@ -28,11 +28,11 @@ class SilverInterruptibleCore(GrainDecomposition):
     table_name = "interruptible_core"
     feed = "interruptible"
     grain = "core"
-    source_table = "interruptible_core_amended"
+    source_table = "interruptible_amended"
     key_cols_list = ["interruptibleid", "tspduns"]
 
-    source_where = "version_status = 'Current'"
-    drop_columns = ["locations", "rates", "version_status", "voided_ts"]
+    source_where = "amend_version_status = 'Current'"
+    drop_columns = ["locations", "rates", "amend_version_status", "amend_voided_ts"]
 
     columns = [
         "bronze_row_id",

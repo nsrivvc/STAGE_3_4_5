@@ -7,13 +7,13 @@ to the runner. No central list to maintain.
 
 Transformations are grouped by pipeline stage, then by component:
 
-    stage_1_2(ingestion)/   the stage 1-2 subproject: mock NatGasHub API
-                            (stage 1, src/mock_api) and JSON -> Bronze
-                            ingestion (stage 2, src/bronze). NOT part of
-                            discovery -- see the skip below.
+    stage_1/    API -> JSON: the mock NatGasHub API (src/mock_api) plus the
+                data/ fixtures it serves. Its output is a fetched JSON file.
+                NOT part of discovery -- see the skip below.
     stage_2/    a JSON file -> its Bronze raw table: json_to_raw.py plus one
-                declaration module per feed, run by its own workflow. NOT part
-                of discovery either -- see the skip below.
+                declaration module per feed and the Bronze DDL (sql/), run by
+                its own workflow. NOT part of discovery either -- see the
+                skip below.
     stage_3/    Silver staging: decompisition, standardization, deduplication,
                 ammendments
     stage_4/    rec_del_pairing
@@ -36,15 +36,15 @@ import importlib
 import pkgutil
 
 #: Subfolders that live here for pipeline-layout uniformity but are their own
-#: runtime, not transformation modules. The stage 1-2 ingestion subproject has
-#: its own dependencies (psycopg 3, fastapi/uvicorn) that are NOT installed in
-#: the stage 3-5 environments, so importing it would crash every run. stage_2
-#: is a single script driven by its own workflow, not by run.py. Neither
-#: registers anything, so skipping them loses nothing.
+#: runtime, not transformation modules. stage_1 (the mock API) depends on
+#: fastapi/uvicorn, which are NOT installed in the stage 3-5 environments, so
+#: importing it would crash every run. stage_2 is a single script driven by
+#: its own workflow, not by run.py. Neither registers anything, so skipping
+#: them loses nothing.
 #:
 #: Neither is a package today, so iter_modules already passes them by; naming
 #: them keeps that true if one ever gains an __init__.py.
-_NOT_TRANSFORMATIONS = {"stage_1_2(ingestion)", "stage_2"}
+_NOT_TRANSFORMATIONS = {"stage_1", "stage_2"}
 
 # Two-level walk instead of one flat walk_packages over __path__: the top level
 # is filtered by _NOT_TRANSFORMATIONS, then each surviving subpackage is walked

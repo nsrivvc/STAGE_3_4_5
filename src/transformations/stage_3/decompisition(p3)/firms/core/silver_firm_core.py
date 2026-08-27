@@ -3,7 +3,7 @@ silver_firm_core.py
 ===================
 Decomposes the FIRM feed's core into `<DECOMP_SCHEMA>.firm_core`.
 
-Source: `firm_core_amended` (ammendments(p2) output -- the folded contract
+Source: `firm_amended` (ammendments(p2) output -- the folded contract
         header). That table is a VERSION HISTORY, so `source_where` narrows the
         read to each contract's Current row; the Void versions stay behind.
 Key:    (firmid, tspduns)
@@ -27,11 +27,11 @@ class SilverFirmCore(GrainDecomposition):
     table_name = "firm_core"
     feed = "firm"
     grain = "core"
-    source_table = "firm_core_amended"
+    source_table = "firm_amended"
     key_cols_list = ["firmid", "tspduns"]
 
-    source_where = "version_status = 'Current'"
-    drop_columns = ["locations", "rates", "version_status", "voided_ts"]
+    source_where = "amend_version_status = 'Current'"
+    drop_columns = ["locations", "rates", "amend_version_status", "amend_voided_ts"]
 
     columns = [
         "bronze_row_id",

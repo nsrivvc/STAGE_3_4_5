@@ -1,43 +1,54 @@
 """
-silver_awards_core.py
-=====================
-Decomposes the AWARDS feed's core into `<DECOMP_SCHEMA>.awards_core`.
+silver_awards_amended.py
+========================
+Resolves the AWARDS feed's posting history into one CURRENT row per award,
+keyed on (awardnumber, transportationserviceproviderpropcode), with
+superseded versions kept as Void (see amend_base.py for the whole flow --
+the logic is identical to firm/interruptible; only column names differ):
 
-Source: `awards_amended` (ammendments(p2) output -- the folded posting
-        history). That table is a VERSION HISTORY, so `source_where` narrows
-        the read to each award's Current row; the Void versions stay behind.
-Key:    (id)
+  * awards carry NO AmendRptg/AmendRptgDesc columns (`desc_col = None`), so
+    after the always-appended FIRST instance, every later posting takes the
+    TSP's declared mode from the pipeline attributes table -- joined here on
+    TransportationServiceProviderPropCode, the awards feed's TSP identifier
+    (change `partner_col` if the attributes table ends up keyed differently
+    for awards). A TSP with no attributes row defaults to All Data
+    behaviour: the latest posting IS the award.
+  * the posting timestamp is `postdatetime` (firm/it: posteddatetime);
+  * the freshness marker is `record_status` -- gawd's `status` column is the
+    award's own business status, and its `version_status` is business data
+    too, which is exactly why this phase keeps its bookkeeping in
+    amend_version_status / amend_voided_ts.
 
-(The business `version_status` column carried below is the award's own data
-from the feed; the version filter here is on the phase's amend_version_status
-bookkeeping -- different things.)
+Reads the deduplication(p1) output `awards_dedup` (fresh rows only); writes
+`<DECOMP_SCHEMA>.awards_amended`, which decompisition(p3)'s core reads
+filtered to amend_version_status = 'Current'. Flips the consumed rows'
+freshness marker to 'processed' in awards_dedup and bronze.gawd.
 
-`drop_columns` removes the nested `locations` / `rates` JSON that Bronze keeps
-on the award row -- they become their own grains, and the agreed core schema
-excludes them -- and the version bookkeeping, which is p2's concern, not a
-grain's.
-
-Column list is explicit rather than introspected so `--show-sql` works without a
-database. If the upstream table gains a column, add it here or it is not carried.
+The column list below is the full shape of bronze.gawd (everything except
+the 'record_status' freshness marker, which is bookkeeping, not data). It is
+explicit rather than introspected so the SQL can be generated without a
+database connection (`--show-sql` works offline).
 """
 
 from __future__ import annotations
 
-from ...decomp_base import GrainDecomposition
-from ......core.registry import register
+from ..amend_base import ContractAmendments
+from .....core.registry import register
 
 
 @register
-class SilverAwardsCore(GrainDecomposition):
-    name = "silver_awards_core"
-    table_name = "awards_core"
+class SilverAwardsAmended(ContractAmendments):
+    name = "silver_awards_amended"
+    table_name = "awards_amended"
     feed = "awards"
-    grain = "core"
-    source_table = "awards_amended"
-    key_cols_list = ["id"]
+    source_table = "awards_dedup"
+    raw_table = "gawd"
+    contract_id_col = "awardnumber"
+    partner_col = "transportationserviceproviderpropcode"
 
-    source_where = "amend_version_status = 'Current'"
-    drop_columns = ["locations", "rates", "amend_version_status", "amend_voided_ts"]
+    status_col = "record_status"
+    posted_col = "postdatetime"
+    desc_col = None
 
     columns = [
         "bronze_row_id",
@@ -125,6 +136,8 @@ class SilverAwardsCore(GrainDecomposition):
         "bidderfullname",
         "version_status",
         "updateddatetime",
+        "locations",
+        "rates",
         "raw_record_id",
         "hash_key",
         "pipeline_run_id",

@@ -7,11 +7,11 @@ NatGasHub endpoint (plus its API-key secret) replaces it.
 
 HOW TO RUN IT LOCALLY
 ---------------------
-Run from THIS SUBPROJECT's root -- src/transformations/stage_1_2(ingestion) --
-because the module path `src.mock_api.app` resolves against the current
-working directory:
+Run from THIS STAGE's root -- src/transformations/stage_1 -- because the
+module path `src.mock_api.app` resolves against the current working
+directory:
 
-    cd "src/transformations/stage_1_2(ingestion)"
+    cd src/transformations/stage_1
     python -m uvicorn src.mock_api.app:app --host 127.0.0.1 --port 8000
 
 Add uvicorn's --reload flag to auto-restart on code edits (unrelated to the
@@ -24,14 +24,15 @@ pipeline's own --reload). Then:
     http://127.0.0.1:8000/api/ioc             -> data/ioc_test.json
     http://127.0.0.1:8000/api/awards          -> data/awards_test.json
 
-Each endpoint returns the matching fixture in this subproject's data/ folder
+Each endpoint returns the matching fixture in this stage's data/ folder
 VERBATIM (see loader.py) -- to change what the API serves, edit the fixture
 file; no code changes needed. This service never touches Neon/Postgres.
 
 IN CI, NOTHING TO DO MANUALLY: every bronze_ingest_*.yml workflow starts its
 own copy on 127.0.0.1:8000 inside the runner ("Start mock NatGasHub API"
 step), curls the endpoint into data/_fetched_*.json, feeds that file to
-`python -m src.main`, and the server dies with the job.
+stage 2 (src/transformations/stage_2/json_to_raw.py), and the server dies
+with the job.
 
 CORS origins for browser-based consumers (e.g. the orchestration interface's
 dev frontend) default to common local dev ports below and can be overridden

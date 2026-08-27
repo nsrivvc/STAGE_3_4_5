@@ -7,7 +7,7 @@ name: (stage4)rec-del-pairing [awards]
 # receipt/delivery paths to pair, so there are two of these, not four.
 #
 # ONE FEED PER FILE: this workflow handles the AWARDS feed and nothing else, so it
-# runs, logs, fails and uploads its Parquet completely independently of the other
+# runs, logs and fails completely independently of the other
 # feeds. Its sibling files cover the rest.
 #
 # MANUAL ONLY: no cron schedule. Nothing enforces stage ordering, so run the
@@ -48,8 +48,6 @@ jobs:
       DECOMP_SCHEMA: silver_staging
       # Stage numbering follows the workflows; the feed subdirectory below it
       # comes from the transformations' own `source` attribute.
-      PARQUET_STAGE: stage4
-      PARQUET_OUTPUT_DIR: parquet_output
       LOG_LEVEL: INFO
 
     steps:
@@ -90,12 +88,3 @@ jobs:
         if: always()
         run: python run.py --inspect
 
-      # Runners are ephemeral, so the export has to leave the machine. `always()`
-      # keeps a partial export when a DB write failed, which is when it helps most.
-      - name: Upload Parquet export
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: silver-parquet-stage4-awards-${{ github.run_id }}
-          path: parquet_output/
-          if-no-files-found: warn

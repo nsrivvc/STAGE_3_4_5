@@ -1,16 +1,19 @@
 """
-silver_interruptible_core_amended.py
-====================================
-Resolves the INTERRUPTIBLE feed's contract posting history into one CURRENT
-row per contract, keyed on (interruptibleid, tspduns), with superseded
-versions kept as Void (see amend_base.py for the whole flow).
+silver_firm_amended.py
+======================
+Resolves the FIRM feed's contract posting history into one CURRENT row per
+contract, keyed on (firmid, tspduns), with superseded versions kept as Void
+(see amend_base.py for the whole flow).
 
-Reads the deduplication(p1) output `interruptible_dedup` (fresh rows only);
-writes `<DECOMP_SCHEMA>.interruptible_core_amended`, which decompisition(p3)
-reads filtered to version_status = 'Current'. Flips the consumed rows'
-freshness marker to 'processed' in interruptible_dedup and bronze.gtran_it.
+No "core" in the name: the contract is still WHOLE here -- the core /
+locations / rates split does not happen until decompisition(p3).
 
-The column list below is the full 52-column shape of bronze.gtran_it
+Reads the deduplication(p1) output `firm_dedup` (fresh rows only); writes
+`<DECOMP_SCHEMA>.firm_amended`, which decompisition(p3) reads filtered to
+amend_version_status = 'Current'. Flips the consumed rows' freshness marker
+to 'processed' in firm_dedup and bronze.gtran_firm.
+
+The column list below is the full 58-column shape of bronze.gtran_firm
 (everything except the 'status' freshness marker, which is bookkeeping, not
 data). It is explicit rather than introspected so the SQL can be generated
 without a database connection (`--show-sql` works offline). If the Bronze
@@ -24,13 +27,13 @@ from .....core.registry import register
 
 
 @register
-class SilverInterruptibleCoreAmended(ContractAmendments):
-    name = "silver_interruptible_core_amended"
-    table_name = "interruptible_core_amended"
-    feed = "interruptible"
-    source_table = "interruptible_dedup"
-    raw_table = "gtran_it"
-    contract_id_col = "interruptibleid"
+class SilverFirmAmended(ContractAmendments):
+    name = "silver_firm_amended"
+    table_name = "firm_amended"
+    feed = "firm"
+    source_table = "firm_dedup"
+    raw_table = "gtran_firm"
+    contract_id_col = "firmid"
 
     columns = [
         "bronze_row_id",
@@ -39,7 +42,7 @@ class SilverInterruptibleCoreAmended(ContractAmendments):
         "tspduns",
         "tspprop",
         "posteddatetime",
-        "interruptibleid",
+        "firmid",
         "cycle",
         "amendrptg",
         "amendrptgdesc",
@@ -48,11 +51,12 @@ class SilverInterruptibleCoreAmended(ContractAmendments):
         "kholderprop",
         "svcreqk",
         "ratesch",
-        "itqtyk",
+        "kqtyk",
         "kstat",
         "kstatdesc",
         "kbegdatetime",
         "kenddatetime",
+        "kendind",
         "ngtdrateind",
         "ngtdrateinddesc",
         "pkgid",
@@ -60,6 +64,12 @@ class SilverInterruptibleCoreAmended(ContractAmendments):
         "krolldesc",
         "affil",
         "affildesc",
+        "captype",
+        "captypename",
+        "captypeloc",
+        "captypelocdesc",
+        "osid",
+        "rte",
         "termsnotes",
         "createddatetime",
         "reclocs",
@@ -69,7 +79,6 @@ class SilverInterruptibleCoreAmended(ContractAmendments):
         "otherrates",
         "otherratesdescription",
         "otherratesbasis",
-        "dealtype",
         "locations",
         "rates",
         "term",

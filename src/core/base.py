@@ -28,13 +28,10 @@ SQLAlchemy. The runner passes a live Connection to run().
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, List
+from typing import List
 
 from ..config import settings
 from ..logging_config import get_logger
-
-if TYPE_CHECKING:  # for type hints only; keeps pyarrow out of the import path
-    from ..parquet_export import ExportContext
 
 log = get_logger(__name__)
 
@@ -59,9 +56,9 @@ class PipelineTransformation(ABC):
     incremental: bool = False
 
     # Which of the four JSON source feeds these rows come from: "firm",
-    # "interruptible" (aka IT), "awards" or "ioc". Used to partition the Parquet
-    # export by feed. Leave empty for anything genuinely cross-feed (e.g. the
-    # master capacity finals) and it files under "_combined".
+    # "interruptible" (aka IT), "awards" or "ioc". Drives the runner's
+    # --source filtering. Leave empty for anything genuinely cross-feed (e.g.
+    # the master capacity finals) and it files under "_combined".
     source: str = ""
 
     # --- schema names come from config so they're not hardcoded --------------
@@ -81,13 +78,13 @@ class PipelineTransformation(ABC):
 
         The stage-5 layout already encodes the feed in the path
         (master_capacity/firm/core/...), so a module that doesn't declare
-        `source` still gets its Parquet filed under the right feed instead of
-        silently landing in `_combined`. An explicit `source` always wins.
+        `source` still resolves to the right feed instead of silently landing
+        in `_combined`. An explicit `source` always wins.
 
         A `final/` segment means cross-feed and maps to `_combined`, which is
         what those tables actually are.
         """
-        from ..parquet_export import COMBINED, SOURCES
+        from .sources import COMBINED, SOURCES
 
         for part in type(self).__module__.split("."):
             if part in SOURCES:
@@ -128,44 +125,12 @@ class PipelineTransformation(ABC):
         """Idempotent load: INSERT ... SELECT ... ON CONFLICT (...) DO UPDATE ... ."""
 
     # --- default execution; override only for non-SQL (pure-Python) loads ----
-    def run(self, conn, ctx: "ExportContext | None" = None) -> int:
+    def run(self, conn) -> int:
         """Create the table if needed, then upsert. Returns rows affected.
 
         `conn` is a SQLAlchemy Connection supplied by the runner inside a
         transaction, so partial failures roll back automatically.
-
-        THE PARQUET EXPORT HOOK LIVES HERE, and this is the only place any
-        transformation writes rows — so every stage, present and future, is
-        exported with no per-stage code.
-
-        When `ctx` is supplied, `RETURNING *` is appended to the transform so
-        the rows written come back to Python, get written to Parquet, and only
-        then does the transaction commit. The rows are the DB's own output, not
-        a reconstruction, and a failed write rolls back both sides.
-
-        Note the export happens after the INSERT statement but before COMMIT:
-        the rows do not exist until the INSERT produces them, so exporting
-        strictly "before the database write" isn't possible without abandoning
-        the set-based SQL design. Nothing is exported that wasn't durably
-        written, and nothing is written without being exported.
-
-        Overriding this method for a pure-Python load means opting out of the
-        export unless the override calls parquet_export.export_rows itself.
         """
         conn.exec_driver_sql(self.create_table_sql())
-
-        # Trailing semicolon has to go before RETURNING can be appended.
-        sql = self.transform_sql().rstrip().rstrip(";")
-
-        if ctx is None:
-            result = conn.exec_driver_sql(sql)
-            return result.rowcount if result.rowcount is not None else -1
-
-        from .. import parquet_export
-
-        rows = [dict(r) for r in conn.exec_driver_sql(f"{sql}\nRETURNING *").mappings().all()]
-        path = parquet_export.export_for_stage(
-            self.table_name, rows, ctx=ctx, source=self.source)
-        if path:
-            log.info("[%s] parquet: %s", self.name, path)
-        return len(rows)
+        result = conn.exec_driver_sql(self.transform_sql().rstrip().rstrip(";"))
+        return result.rowcount if result.rowcount is not None else -1

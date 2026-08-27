@@ -142,15 +142,14 @@ assumes the **Bronze tables already exist**; it reads them and writes Silver.
 python run.py --list                                 # what's registered
 python run.py --list-groups                          # what's registered, by folder
 python run.py --inspect                              # snapshot tables + row counts (no transforms)
-python run.py --show-sql silver_firm_transport_rate  # inspect SQL (no DB needed)
-python run.py --table silver_firm_transport_rate     # run one transformation
+python run.py --show-sql silver_awards_core          # inspect SQL (no DB needed)
+python run.py --table silver_awards_core             # run one transformation
 python run.py --group rec_del_pairing                # run one component
 python run.py --group stage_4                        # run a whole stage
 python run.py --group master_capacity/firm/core      # run one leaf folder
 python run.py --source firm                          # run one source feed
 python run.py --all                                  # run all of them
 python run.py --all --reload                         # rebuild tables that already exist
-python run.py --all --no-parquet                     # skip the Parquet export
 ```
 
 `--group` matches on any folder segment, so a component can be selected by its
@@ -284,50 +283,6 @@ POST /repos/<owner>/<repo>/dispatches
 Any number of feeds can be named; each has its own gated job. Omitting
 `sources` replays all of them.
 
-## Parquet export
-
-Every table's rows are also written to Parquet, from a single hook in
-`base.run()` — the one place any transformation writes. A new stage or table is
-exported with **no export-code changes**.
-
-```
-parquet_output/<stage>/<source>/<table>/run_date=YYYY-MM-DD/<run_id>.parquet
-```
-
-- **`<stage>`** comes from `PARQUET_STAGE`, which each workflow sets, so one
-  workflow run produces exactly one stage directory and one uploaded artifact.
-  Unset, it falls back to the transformation's own folder.
-- **`<source>`** is the JSON feed the rows came from — `firm`, `interruptible`
-  (aka IT), `awards`, `ioc` — so one feed can be read without scanning the
-  others. Cross-feed tables (the master capacity finals) land in `_combined`.
-  Each transformation declares this via its `source` attribute; the rec-del
-  classes derive it from `entity` automatically.
-- **`<run_id>`** is shared by every table in a run, so one run's output is
-  greppable.
-
-`src/parquet_export.py` holds the mechanics in `export_rows` (no stage or table
-knowledge) plus a dedicated function per stage — `export_stage3_rows`,
-`export_stage4_rows`, `export_stage5_rows` — so a stage can diverge later without
-disturbing the others. `export_for_stage` dispatches, falling back to the generic
-exporter for a stage with no dedicated function.
-
-The export runs **after the INSERT but before COMMIT**. The rows don't exist
-until the INSERT produces them (the transforms are `INSERT … SELECT`, executed
-entirely server-side), so exporting strictly before the write isn't possible
-without abandoning the set-based design. `RETURNING *` is appended to the
-transform, so the exported rows are the database's own output — nothing is
-exported that wasn't durably written, and nothing is written without being
-exported.
-
-Turn it off with `PARQUET_OUTPUT_DIR=""` or `--no-parquet`. `parquet_output/` is
-gitignored.
-
-> **A transformation that skips exports nothing**, because it writes nothing.
-> With the load-once gate, that means a scheduled run produces no Parquet after
-> the first one. Use `--reload` to drop and rebuild a table (inside the same
-> transaction, so a failed rebuild leaves the existing table intact) and get a
-> fresh export.
-
 ## Running it in CI
 
 `run.py` is a plain batch command that reads all config from environment
@@ -440,16 +395,21 @@ logs a warning and exits 0.
 To run any of them: push the repo, add the `DATABASE_URL` secret, then Actions →
 pick the workflow → **Run workflow**.
 
-### Stage 1-2 ingestion lives in this repo
+### Stage 1: API -> JSON
 
-The former `nsrivvc/json--bronze--postgres` repo (stage 1: mock NatGasHub API,
-stage 2: JSON -> Bronze ingestion) is merged into this repository under
-[`src/transformations/stage_1_2(ingestion)/`](src/transformations/stage_1_2(ingestion)/). It is a self-contained subproject with its own
-`src/` (`mock_api/`, `bronze/`, `db/`), `requirements.txt`, `.env` and README —
-nothing in it imports from the stage 3-4-5 code or vice versa.
+Stage 1 is [`src/transformations/stage_1/`](src/transformations/stage_1/): the
+mock NatGasHub API (`src/mock_api/`) plus the `data/` fixtures it serves. Its
+whole job is API -> JSON — serve the feeds over HTTP, fetch one to a file. The
+fetched file is stage 1's entire output; stage 2 takes it from there. Nothing
+in it imports from the stage 2-5 code or vice versa, and its only dependencies
+(fastapi + uvicorn) live in its own `requirements.txt`.
 
-Its five workflows run at the root like every other one, with
-`defaults.run.working-directory` pointed at the subproject:
+(Stage 1 used to be half of a merged `stage_1_2(ingestion)` subproject, whose
+`main.py` duplicated the stage 2 loader. That subproject is retired: the mock
+API and fixtures moved here, the Bronze DDL moved to `stage_2/sql/`, and the
+`bronze_ingest_*.yml` workflows now call `stage_2/json_to_raw.py` directly.)
+
+Five workflows drive the fetch-then-load pair (stage 1, then stage 2):
 
 | workflow | feed | loads |
 |---|---|---|
@@ -462,7 +422,7 @@ Its five workflows run at the root like every other one, with
 **Running the mock NatGasHub API locally** (stage 1 — serves the JSON feeds):
 
 ```powershell
-cd "src\transformations\stage_1_2(ingestion)"
+cd "src\transformations\stage_1"
 python -m uvicorn src.mock_api.app:app --host 127.0.0.1 --port 8000
 ```
 
@@ -470,7 +430,7 @@ Then `http://127.0.0.1:8000/docs` for the interactive endpoint list, or hit
 `/api/firms`, `/api/interruptibles`, `/api/ioc`, `/api/awards` directly — each
 returns the matching `data/*.json` fixture verbatim. Full instructions (CORS,
 changing the served data, how CI starts it automatically) are in the
-[subproject README](src/transformations/stage_1_2(ingestion)/README.md).
+[stage 1 README](src/transformations/stage_1/README.md).
 
 Because everything is one repo, the feed orchestrators
 (`firm(stage3_4_5).yml`, `interruptible(stage3_4_5).yml`,
@@ -488,10 +448,10 @@ fresh rows plus whatever the other feeds last left behind.
 ### Stage 2 on its own: a JSON file -> its raw table
 
 [`src/transformations/stage_2/`](src/transformations/stage_2/) is stage 2 with
-nothing else attached — no API, no Parquet, no Silver logic, no deduplication
+nothing else attached — no API, no Silver logic, no deduplication
 (that is stage 3's `deduplication(p1)` phase). Give it a JSON file and it
 writes the records into the matching raw table. Five files, one per feed plus
-the loader that drives them:
+the loader that drives them, and the Bronze DDL:
 
 | file | holds |
 |---|---|
@@ -500,6 +460,7 @@ the loader that drives them:
 | `interruptible.py` | gTRAN_IT -> `bronze.gtran_it` |
 | `awards.py` | gAWD -> `bronze.gawd` |
 | `ioc.py` | gINDEX -> `bronze.gindex` |
+| `sql/create_bronze_tables.sql` | the raw tables' DDL, applied by `--create-tables` |
 
 A feed module is a short list of declarations, no code: the words that name it
 in a file name, the envelope its records arrive under, which key is the record
@@ -518,16 +479,19 @@ Run it with [`(stage2)json_to_raw.yml`](.github/workflows/(stage2)json_to_raw.ym
 (inputs: `file`, `dry_run`) or directly:
 
 ```powershell
-python "src\transformations\stage_2\json_to_raw.py" --file "src\transformations\stage_1_2(ingestion)\data\firm_sample_worklow.json"
+python "src\transformations\stage_2\json_to_raw.py" --file "src\transformations\stage_1\data\firm_sample_worklow.json"
 python "src\transformations\stage_2\json_to_raw.py" --file <path> --dry-run
+python "src\transformations\stage_2\json_to_raw.py" --create-tables   # DDL only
 ```
 
 **The database owns the schema.** The loader reads the target table's columns
 from `information_schema` instead of declaring them, so it cannot drift from
 what is actually in Neon: a column added there is populated on the next run,
 and a JSON key with nowhere to land is reported rather than dropped (it is
-still kept in full in `raw_payload`). It needs the raw table to exist — it
-writes into the Bronze tables, it does not create them.
+still kept in full in `raw_payload`). It needs the raw table to exist — pass
+`--create-tables` to apply `sql/create_bronze_tables.sql` first (all
+CREATE/ALTER IF NOT EXISTS, so it is safe on every run), or run the flag on
+its own to just create the tables.
 
 Bronze keeps every load, duplicates included. Stage 3's deduplication(p1)
 is the one place duplicate rows are dropped, by comparing the rows' own data

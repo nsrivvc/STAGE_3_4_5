@@ -11,7 +11,8 @@ name: firm (stage 3-4-5)
 #                                                   stage5 locations   >-- finals
 #                                                   stage5 rates -----/
 #
-# The ingestion code lives in this repo's src/transformations/stage_1_2(ingestion)/ subproject, so the whole
+# The ingestion code lives in this repo (stage 1 mock API in src/transformations/stage_1/,
+# stage 2 loader in src/transformations/stage_2/), so the whole
 # pipeline chains as plain jobs. The repository_dispatch trigger below is kept
 # for backwards compatibility with anything that still posts
 # bronze-firm-loaded from outside; a dispatch-triggered run also re-ingests

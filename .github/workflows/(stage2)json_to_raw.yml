@@ -18,7 +18,8 @@ name: (stage2)json-to-raw
 #
 # The default is the committed firm sample, so a plain "Run workflow" does
 # something useful with no arguments. Point it at stage 1's output
-# (data/_fetched_firms.json) to load a freshly fetched feed instead.
+# (src/transformations/stage_1/data/_fetched_firms.json) to load a freshly
+# fetched feed instead.
 #
 # Re-running a file loads it again: Bronze keeps every batch, duplicates
 # included. Stage 3's deduplication(p1) is where duplicate content is dropped,
@@ -29,7 +30,7 @@ on:
       file:
         description: "Path to the JSON file (repo-relative)"
         required: true
-        default: "src/transformations/stage_1_2(ingestion)/data/firm_sample_worklow.json"
+        default: "src/transformations/stage_1/data/firm_sample_worklow.json"
       dry_run:
         description: "Convert and report without writing anything"
         required: false
@@ -43,7 +44,7 @@ on:
       file:
         required: false
         type: string
-        default: "src/transformations/stage_1_2(ingestion)/data/firm_sample_worklow.json"
+        default: "src/transformations/stage_1/data/firm_sample_worklow.json"
       dry_run:
         required: false
         type: boolean
@@ -93,9 +94,9 @@ jobs:
           fi
           echo "loading $(wc -c < "${{ inputs.file }}") bytes from ${{ inputs.file }}"
 
-      # Built as an array because the sample path contains parentheses, and
-      # because "[ cond ] && ARGS+=..." would exit non-zero on a false
-      # condition and fail the step under bash -e.
+      # Built as an array so a path with spaces or shell metacharacters stays
+      # one argument, and because "[ cond ] && ARGS+=..." would exit non-zero
+      # on a false condition and fail the step under bash -e.
       - name: Write JSON to its raw table
         run: |
           ARGS=(--file "${{ inputs.file }}")

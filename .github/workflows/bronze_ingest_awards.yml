@@ -1,12 +1,11 @@
 name: bronze-ingest-awards
 
-# JSON Ingestion -> Bronze for the CAPACITY RELEASE AWARDS feed.
-# Stage 1-2 code lives in the src/transformations/stage_1_2(ingestion)/ subproject of this repo (it was the
-# standalone json--bronze--postgres repo before the merge).
+# STAGE 1 + STAGE 2 for the CAPACITY RELEASE AWARDS feed.
 #
-# Flow: start the in-repo mock NatGasHub API, fetch /api/awards from it, then
-# run the ingestion (validate -> route -> transform -> Parquet export -> load
-# into bronze.gawd on Neon).
+# Flow: start the stage 1 mock NatGasHub API (src/transformations/stage_1),
+# fetch /api/awards from it to a JSON file, then hand that file to stage 2
+# (src/transformations/stage_2/json_to_raw.py), which creates the Bronze
+# tables if they don't exist and loads bronze.gawd on Neon.
 #
 # Runs three ways:
 #   * on its own via "Run workflow" (workflow_dispatch),
@@ -14,20 +13,15 @@ name: bronze-ingest-awards
 #   * as the first job of the awards(stage3_4_5).yml end-to-end orchestrator.
 #
 # To point at the real NatGasHub API later: drop the "Start mock" step and
-# fetch the live endpoint instead (with the API key secret).
+# fetch the live endpoint instead (with the API key secret). Stage 2 only ever
+# sees the fetched JSON file, so nothing else changes.
 on:
   workflow_dispatch:
   workflow_call:
 
 env:
   API_BASE: "http://127.0.0.1:8000"
-  FETCHED_FILE: "data/_fetched_awards.json"
-
-# All run: steps execute inside the ingestion subproject. uses: steps
-# (checkout, setup-python, upload-artifact) ignore this by design.
-defaults:
-  run:
-    working-directory: src/transformations/stage_1_2(ingestion)
+  FETCHED_FILE: "src/transformations/stage_1/data/_fetched_awards.json"
 
 jobs:
   ingest:
@@ -39,10 +33,17 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Root requirements carry stage 2's driver (psycopg2-binary); stage 1's
+      # requirements carry fastapi + uvicorn for the mock API.
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install -r src/transformations/stage_1/requirements.txt
 
-      - name: Start mock NatGasHub API
+      # The src.mock_api.app module path resolves against the working
+      # directory, hence the explicit working-directory on this step.
+      - name: Start mock NatGasHub API (stage 1)
+        working-directory: src/transformations/stage_1
         run: |
           nohup uvicorn src.mock_api.app:app --host 127.0.0.1 --port 8000 > mock_api.log 2>&1 &
           for i in $(seq 1 30); do
@@ -54,23 +55,9 @@ jobs:
       - name: Fetch awards JSON from the API
         run: curl -sf "$API_BASE/api/awards" -o "$FETCHED_FILE"
 
-      - name: Run Bronze ingestion
+      - name: Load into Bronze (stage 2)
         env:
-          DB_TYPE: postgres
           DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Neon connection string
           SOURCE_SYSTEM: NatGasHub
           TRIGGERED_BY: github-actions
-        run: python -m src.main --file "$FETCHED_FILE" --create-tables
-
-      # The ingestion also exports each Bronze table to Parquet (under
-      # the subproject's parquet_output/) before loading the database. Publish those
-      # files as a build artifact so they can be downloaded or handed to a
-      # later stage. NB: upload-artifact paths are repo-relative -- the
-      # working-directory default above does not apply to uses: steps.
-      - name: Upload Parquet export
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bronze-parquet-awards-${{ github.run_id }}
-          path: src/transformations/stage_1_2(ingestion)/parquet_output/
-          if-no-files-found: warn
+        run: python "src/transformations/stage_2/json_to_raw.py" --file "$FETCHED_FILE" --create-tables

@@ -6,8 +6,8 @@ Batch entrypoint for the Bronze -> Silver transformations.
 
 Examples:
     python run.py --list                              # show registered transformations
-    python run.py --show-sql silver_firm_transport_rate   # print SQL (no DB needed)
-    python run.py --table silver_firm_transport_rate  # run one
+    python run.py --show-sql silver_awards_core       # print SQL (no DB needed)
+    python run.py --table silver_awards_core          # run one
     python run.py --group rec_del_pairing             # run one phase folder
     python run.py --list-groups                       # show phase folders
     python run.py --shippers --source firm            # show the shipper scope for one feed
@@ -46,19 +46,9 @@ def main(argv=None) -> int:
                         help="Only run transformations for one JSON source feed: "
                              "firm, interruptible (or it), awards, ioc, or final "
                              "(the cross-feed tables). Narrows --all and --group.")
-    parser.add_argument("--parquet-dir", metavar="DIR",
-                        help="Directory for the Parquet export (overrides PARQUET_OUTPUT_DIR)")
-    parser.add_argument("--no-parquet", action="store_true", help="Disable the Parquet export")
     parser.add_argument("--reload", action="store_true",
                         help="Drop and rebuild tables that already exist, instead of skipping them")
     args = parser.parse_args(argv)
-
-    # Applied before any transformation imports settings-derived values.
-    from src.config import settings
-    if args.parquet_dir:
-        settings.parquet_output_dir = args.parquet_dir
-    if args.no_parquet:
-        settings.parquet_output_dir = ""
 
     # Import here so --help works without importing the DB stack.
     from src.core import runner
@@ -95,6 +85,7 @@ def main(argv=None) -> int:
         return 0
 
     if args.shippers:
+        from src.config import settings
         from src.core import shipper_scope
         from src.db.connection import get_engine
 
@@ -116,17 +107,15 @@ def main(argv=None) -> int:
         return 0
 
     if args.table:
-        result = runner.run_one(args.table, runner.new_export_context(), args.reload)
+        result = runner.run_one(args.table, args.reload)
         return 1 if result.status == "failed" else 0
 
     if args.group:
-        results = runner.run_group(
-            args.group, runner.new_export_context(), args.reload, args.source)
+        results = runner.run_group(args.group, args.reload, args.source)
         return 1 if runner.any_failed(results) else 0
 
     if args.all:
-        results = runner.run_all(
-            runner.new_export_context(), args.reload, args.source)
+        results = runner.run_all(args.reload, args.source)
         return 1 if runner.any_failed(results) else 0
 
     return 0

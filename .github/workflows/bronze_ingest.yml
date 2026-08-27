@@ -9,8 +9,8 @@ name: bronze-ingest
 #   bronze_ingest_awards.yml          /api/awards          -> bronze.gawd
 #
 # Each per-source workflow can also be dispatched on its own from the Actions
-# tab; this file just fans out to all of them at once. Stage 1-2 code lives in
-# the src/transformations/stage_1_2(ingestion)/ subproject of this repo.
+# tab; this file just fans out to all of them at once. Stage 1 (mock API) lives
+# in src/transformations/stage_1/, stage 2 in src/transformations/stage_2/.
 #
 # The Bronze DDL is applied once, before the fan-out, so the four parallel
 # ingests never race each other creating tables — their own --create-tables
@@ -19,12 +19,6 @@ name: bronze-ingest
 # never fires on its own.
 on:
   workflow_dispatch:
-
-# All run: steps execute inside the ingestion subproject. uses: steps ignore
-# this by design.
-defaults:
-  run:
-    working-directory: src/transformations/stage_1_2(ingestion)
 
 jobs:
   ensure-schema:
@@ -41,19 +35,8 @@ jobs:
 
       - name: Create Bronze tables (once, before the parallel ingests)
         env:
-          DB_TYPE: postgres
           DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Neon connection string
-        run: |
-          python - <<'PY'
-          from src.bronze import schemas
-          from src.config import Settings
-          from src.db.connection import get_writer
-
-          writer = get_writer(Settings(), dry_run=False)
-          writer.ensure_schema(schemas.generate_ddl())
-          writer.close()
-          print("bronze schema ensured")
-          PY
+        run: python "src/transformations/stage_2/json_to_raw.py" --create-tables
 
   firm:
     needs: ensure-schema

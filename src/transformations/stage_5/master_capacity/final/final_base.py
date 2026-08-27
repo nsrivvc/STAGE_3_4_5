@@ -84,8 +84,8 @@ class FinalMasterCapacityTransformation(PipelineTransformation):
     # SPEC: how duplicates across feeds are resolved. Documentation only today.
     dedupe_note: str = "keep every feed's row, distinguished by source_type"
 
-    # These are cross-feed by nature, so `source` stays empty and the Parquet
-    # export files them under `_combined` rather than any one feed.
+    # These are cross-feed by nature, so `source` stays empty and they file
+    # under `_combined` rather than any one feed.
     #: A FINAL table consolidates whatever ran, rather than requiring
     #: every feed -- the interface allows pulling any subset.
     sources_required = False
@@ -193,7 +193,7 @@ class FinalMasterCapacityTransformation(PipelineTransformation):
         """
 
     # ------------------------------------------------------------------ run
-    def run(self, conn, ctx=None) -> int:
+    def run(self, conn) -> int:
         """Consolidate whichever feeds are present, not all of them.
 
         A workflow in the orchestration interface can pull any subset of sources
@@ -224,6 +224,6 @@ class FinalMasterCapacityTransformation(PipelineTransformation):
                  ", ".join(present), f"  (absent: {', '.join(missing)})" if missing else "")
         self._active_sources = present
         try:
-            return super().run(conn, ctx)
+            return super().run(conn)
         finally:
             self._active_sources = None

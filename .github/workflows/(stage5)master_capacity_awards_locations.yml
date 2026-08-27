@@ -5,7 +5,7 @@ name: (stage5)master-capacity [awards locations]
 # Assembles the locations master capacity table for the AWARDS feed.
 #
 # ONE TABLE PER FILE: this workflow builds awards_locations_master_capacity and nothing
-# else, so it runs, logs, fails and uploads its Parquet independently of the
+# else, so it runs, logs and fails independently of the
 # other 17. It targets a single folder, so whatever is registered there is what
 # runs -- no transformation names are hardcoded here.
 #
@@ -44,8 +44,6 @@ jobs:
       BRONZE_SCHEMA: bronze
       SILVER_SCHEMA: silver
       DECOMP_SCHEMA: silver_staging
-      PARQUET_STAGE: stage5
-      PARQUET_OUTPUT_DIR: parquet_output
       LOG_LEVEL: INFO
 
     steps:
@@ -84,12 +82,3 @@ jobs:
         if: always()
         run: python run.py --inspect
 
-      # Runners are ephemeral, so the export has to leave the machine. `always()`
-      # keeps a partial export when a DB write failed, which is when it helps most.
-      - name: Upload Parquet export
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: silver-parquet-stage5-awards-locations-${{ github.run_id }}
-          path: parquet_output/
-          if-no-files-found: warn

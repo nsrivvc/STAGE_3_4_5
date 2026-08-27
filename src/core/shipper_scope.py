@@ -121,12 +121,11 @@ def ddl(schema: str) -> str:
 def _feed_spellings(feed: str) -> Tuple[str, ...]:
     """Every spelling of `feed` the dashboard might write, deduplicated.
 
-    Reuses the alias table the Parquet export already maintains, so a row
-    written as 'firms' or 'gtran_firm' scopes the firm feed rather than silently
-    matching nothing. Imported inside the function to keep the export module
-    (and its lazy pyarrow) off the import path of `--show-sql`.
+    Reuses the shared source alias table (core/sources.py), so a row written
+    as 'firms' or 'gtran_firm' scopes the firm feed rather than silently
+    matching nothing.
     """
-    from ..parquet_export import _SOURCE_ALIASES, normalize_source
+    from .sources import _SOURCE_ALIASES, normalize_source
 
     canonical = normalize_source(feed)
     return tuple(sorted({k for k, v in _SOURCE_ALIASES.items() if v == canonical}

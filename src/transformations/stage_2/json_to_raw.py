@@ -2,10 +2,11 @@
 json_to_raw.py — Stage 2: a JSON file -> its raw table.
 =======================================================
 Take the JSON, shape each record to the raw table, write it. That is the whole
-job: no API calls, no Parquet, no Silver logic, no deduplication (stage 3).
+job: no API calls, no Silver logic, no deduplication (stage 3).
 
     python src/transformations/stage_2/json_to_raw.py --file data/firms.json
     python src/transformations/stage_2/json_to_raw.py --file <path> --dry-run
+    python src/transformations/stage_2/json_to_raw.py --create-tables   # DDL only
 
 The file says which feed it is, so nothing has to be told. One module per feed
 sits next to this one, declaring the little the database cannot tell us:
@@ -34,14 +35,20 @@ Stages 3-5 are the opposite: same code path per feed would not hold there, so
 each feed has its own yml ((stage3)bronze_to_silver_firm.yml etc.) and you pick
 the feed by picking the workflow. Here you pick the feed by picking the file.
 
-(The bronze_ingest_*.yml workflows are a different route into Bronze: they run
-the stage 1-2 subproject in src/transformations/stage_1_2(ingestion)/ -- fetch
-from the API and load in one job -- not this script.)
+(The bronze_ingest_*.yml workflows run this same script; they just do stage 1
+first -- start the mock API in src/transformations/stage_1/, fetch a feed to
+data/_fetched_*.json -- and then hand that file to this script.)
 
 THE TABLE OWNS THE SCHEMA. Columns come from information_schema at run time,
 not from a list in here, so this cannot drift from the database: a column added
 there is filled on the next run, and a JSON key with nowhere to land is
 reported rather than dropped -- it is kept whole in raw_payload.
+
+The one bootstrap exception: before the first run the table cannot own
+anything, so --create-tables applies sql/create_bronze_tables.sql (all
+CREATE/ALTER IF NOT EXISTS, safe to re-run) -- with a --file to load right
+after, or alone to just make the tables. That SQL file is where the raw
+schema lives in this repo; evolve it there.
 """
 
 from __future__ import annotations  # type hints stay unevaluated text, never run
@@ -90,6 +97,11 @@ METADATA_COLUMNS: Tuple[str, ...] = (
     "source_api", "source_file_name", "ingestion_timestamp", "updated_ts",
     "ingestion_status", "raw_payload",
 )
+
+#: The Bronze DDL --create-tables applies: schema, the four raw tables,
+#: ingestion_log. Idempotent (CREATE/ALTER IF NOT EXISTS throughout).
+DDL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "sql", "create_bronze_tables.sql")
 
 
 class PayloadError(Exception):
@@ -291,6 +303,16 @@ def connect():
     return psycopg2.connect(dsn)
 
 
+def create_tables(conn) -> None:
+    """Apply sql/create_bronze_tables.sql. Safe to run every time: nothing in
+    it drops or rewrites, so existing tables and data are untouched."""
+    with open(DDL_FILE, "r", encoding="utf-8") as fh:
+        ddl = fh.read()
+    with conn.cursor() as cur:
+        cur.execute(ddl)
+    conn.commit()
+
+
 def _q(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
@@ -360,7 +382,8 @@ def write_log(conn, meta: Dict[str, Any], started: datetime, read: int,
 
 # --- 6. THE RUN + CLI --------------------------------------------------------
 
-def run(file_path: str, dry_run: bool = False) -> int:
+def run(file_path: str, dry_run: bool = False,
+        create_tables_first: bool = False) -> int:
     """Does the actual work, start to finish: one JSON file in, one batch of
     rows landed in its raw table. Six steps, marked below. Returns 0 on
     success, 1 if the database write failed."""
@@ -389,6 +412,9 @@ def run(file_path: str, dry_run: bool = False) -> int:
     # the JSON-key -> column-name dictionary the next step matches against.
     conn = connect()
     try:
+        if create_tables_first:
+            create_tables(conn)
+            print(f"Applied {os.path.basename(DDL_FILE)} (CREATE/ALTER IF NOT EXISTS)")
         columns = table_columns(conn, feed.TABLE)
         key_map = key_to_column(feed, columns)
         print(f"Columns: {len(columns)} read from {SCHEMA}.{feed.TABLE}")
@@ -446,7 +472,8 @@ def run(file_path: str, dry_run: bool = False) -> int:
 def main(argv: Optional[List[str]] = None) -> int:
     """The command-line front door. Does NO data work itself -- it only:
 
-        1. defines the two flags this script accepts (--file, --dry-run),
+        1. defines the three flags this script accepts (--file, --dry-run,
+           --create-tables),
         2. hands them to run() above, which does everything,
         3. turns any failure into one readable ERROR line and exit code 2
            (instead of a Python stack trace).
@@ -456,14 +483,28 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Stage 2: write a JSON file into its raw table."
     )
-    parser.add_argument("--file", required=True, help="Path to the JSON file")
+    parser.add_argument("--file", help="Path to the JSON file")
     parser.add_argument("--dry-run", action="store_true",
                         help="Convert and report without writing (still reads the "
                              "table's columns, so DATABASE_URL is required)")
+    parser.add_argument("--create-tables", action="store_true",
+                        help="Apply sql/create_bronze_tables.sql first (CREATE/"
+                             "ALTER IF NOT EXISTS, safe to re-run) -- or alone, "
+                             "with no --file, to just create the tables")
     args = parser.parse_args(argv)
+    if not args.file and not args.create_tables:
+        parser.error("nothing to do: give --file, --create-tables, or both")
 
     try:
-        return run(args.file, args.dry_run)
+        if not args.file:
+            conn = connect()
+            try:
+                create_tables(conn)
+            finally:
+                conn.close()
+            print(f"Applied {os.path.basename(DDL_FILE)}; Bronze tables ready.")
+            return 0
+        return run(args.file, args.dry_run, args.create_tables)
     except FileNotFoundError:
         # The path given with --file does not exist.
         print(f"ERROR: input file not found: {args.file}", file=sys.stderr)

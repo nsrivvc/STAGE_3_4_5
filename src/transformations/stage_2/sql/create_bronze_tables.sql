@@ -1,5 +1,10 @@
--- Auto-generated from src/bronze/schemas.py — do not hand-edit.
--- Regenerate with:  python -m src.bronze.schemas
+-- The Bronze raw tables: the schema source of truth for this repo.
+-- (Originally generated from the retired stage 1-2 subproject's
+-- src/bronze/schemas.py; hand-maintained here since.)
+--
+-- Applied by json_to_raw.py --create-tables. Every statement is CREATE/ALTER
+-- IF NOT EXISTS, so re-running is always safe. To add a column to a feed, add
+-- an ALTER TABLE ... ADD COLUMN IF NOT EXISTS line under its table.
 
 CREATE SCHEMA IF NOT EXISTS bronze;
 

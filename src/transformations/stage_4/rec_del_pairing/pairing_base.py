@@ -94,8 +94,8 @@ class RecDelPairingTransformation(PipelineTransformation):
             raise ValueError(f"{type(self).__name__} must set a `locations_table`.")
         # The runner checks dependencies against this list.
         self.bronze_sources = [self.locations_table]
-        # `entity` already names the JSON source feed, so the Parquet export
-        # partitions by feed without each subclass repeating itself.
+        # `entity` already names the JSON source feed, so --source filtering
+        # works without each subclass repeating itself.
         if not self.source:
             self.source = self.entity
         super().__init__()
