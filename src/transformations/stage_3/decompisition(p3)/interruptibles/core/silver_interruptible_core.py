@@ -86,6 +86,4 @@ class SilverInterruptibleCore(GrainDecomposition):
         "ingestion_status",
         "raw_payload",
         "amend_kind",
-        "amend_postings_applied",
-        "amend_baseline_ts",
     ]
