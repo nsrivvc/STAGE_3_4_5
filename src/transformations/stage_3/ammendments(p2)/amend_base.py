@@ -48,6 +48,10 @@ downstream sees the label that was acted on. `assert_pipeline_attributes()`
 runs before any row is written and fails the run if a row carries a mode the
 join would not recognize.
 
+Its table name, column names, and the accepted mode spellings all live in
+core/table_config.py (PipelineAttributes) -- change them there, and the DDL,
+the join, the classify CASEs and the assert below all follow.
+
 Because the target accumulates versions and the source markers flip, this
 transformation sets `incremental = True`: the runner never drops the table on
 --reload. To rebuild from scratch, drop the table manually -- the next run
@@ -59,6 +63,7 @@ from __future__ import annotations
 from typing import List
 
 from ....core.base import PipelineTransformation
+from ....core.table_config import PipelineAttributes as PA
 
 
 class ContractAmendments(PipelineTransformation):
@@ -85,10 +90,9 @@ class ContractAmendments(PipelineTransformation):
     #: attributes join, defaulting to latest-posting-wins.
     desc_col: str | None = "amendrptgdesc"
 
-    #: One row per TSP declaring its reporting mode -- see module docstring.
-    pipeline_attributes_table: str = "pipeline_attributes"
-
     #: The target is version history -- see the module docstring and runner.
+    #: (The pipeline attributes table itself is configured in
+    #: core/table_config.py, imported above as PA.)
     incremental = True
 
     def __init__(self) -> None:
@@ -133,7 +137,7 @@ class ContractAmendments(PipelineTransformation):
     # ------------------------------------------------------------------ DDL
     def create_table_sql(self) -> str:
         tgt = f"{self.target_schema}.{self.table_name}"
-        pat = f"{self.target_schema}.{self.pipeline_attributes_table}"
+        pat = f"{self.target_schema}.{PA.table}"
         key = ", ".join(self.key_cols)
         return f"""
         CREATE SCHEMA IF NOT EXISTS {self.target_schema};
@@ -141,12 +145,12 @@ class ContractAmendments(PipelineTransformation):
         -- THE PIPELINE ATTRIBUTES TABLE (shared by every feed): one row per
         -- TSP, keyed by DUNS, declaring how that pipeline reports amendments
         -- ('All Data' or 'Changes Only'). Created empty -- populate by hand
-        -- as pipelines' modes become known.
+        -- as pipelines' modes become known. Names come from table_config.py.
         CREATE TABLE IF NOT EXISTS {pat} (
-            tspduns               TEXT PRIMARY KEY,
-            tspname               TEXT,
-            amendment_reporting   TEXT NOT NULL,
-            noted_ts              TIMESTAMPTZ DEFAULT now()
+            {PA.duns_col}         TEXT PRIMARY KEY,
+            {PA.name_col}         TEXT,
+            {PA.mode_col}         TEXT NOT NULL,
+            {PA.noted_col}        TIMESTAMPTZ DEFAULT now()
         );
 
         -- LIKE clones the source's columns; versioning appended, amend_-
@@ -178,12 +182,12 @@ class ContractAmendments(PipelineTransformation):
 
         TODO(pipeline-attributes): when the table is fully specced, extend
         this to assert coverage (which TSPs must have a row)."""
-        pat = f"{self.target_schema}.{self.pipeline_attributes_table}"
+        pat = f"{self.target_schema}.{PA.table}"
         bad = conn.exec_driver_sql(f"""
-            SELECT tspduns, amendment_reporting FROM {pat}
-            WHERE lower(trim(coalesce(amendment_reporting, ''))) NOT IN
-                  ('all data', 'alldata', 'all',
-                   'changes only', 'changesonly', 'changes')
+            SELECT {PA.duns_col}, {PA.mode_col} FROM {pat}
+            WHERE lower(trim(coalesce({PA.mode_col}, ''))) NOT IN
+                  ({PA.sql_list(PA.ALL_DATA)},
+                   {PA.sql_list(PA.CHANGES_ONLY)})
         """).all()
         if bad:
             listing = "; ".join(f"{duns}: {mode!r}" for duns, mode in bad)
@@ -200,17 +204,18 @@ class ContractAmendments(PipelineTransformation):
         cols = sep.join(self.columns)
         src = f"{self.source_schema}.{self.source_table}"
         tgt = f"{self.target_schema}.{self.table_name}"
-        pat = f"{self.target_schema}.{self.pipeline_attributes_table}"
+        pat = f"{self.target_schema}.{PA.table}"
         classified = self._tmp("classified")
         anchors, units = self._tmp("anchors"), self._tmp("units")
         combined = self._tmp("combined")
         pc = self.posted_col
 
         # The TSP's declared mode from the attributes join (NULL = no row).
-        pa_kind = """CASE
-                WHEN lower(trim(pa.amendment_reporting)) IN ('all data', 'alldata', 'all')
+        # Column and spellings come from table_config.PipelineAttributes.
+        pa_kind = f"""CASE
+                WHEN lower(trim(pa.{PA.mode_col})) IN ({PA.sql_list(PA.ALL_DATA)})
                     THEN 'ALL_DATA'
-                WHEN lower(trim(pa.amendment_reporting)) IN ('changes only', 'changesonly', 'changes')
+                WHEN lower(trim(pa.{PA.mode_col})) IN ({PA.sql_list(PA.CHANGES_ONLY)})
                     THEN 'CHANGES_ONLY'
             END"""
 
@@ -219,7 +224,7 @@ class ContractAmendments(PipelineTransformation):
         # column at all) acts as a full restatement: latest posting wins.
         if self.desc_col:
             own_kind = f"""CASE
-                WHEN lower(trim(s.{self.desc_col})) IN ('changes only', 'changesonly', 'changes')
+                WHEN lower(trim(s.{self.desc_col})) IN ({PA.sql_list(PA.CHANGES_ONLY)})
                     THEN 'CHANGES_ONLY'
                 ELSE 'ALL_DATA'
             END"""
@@ -270,7 +275,7 @@ class ContractAmendments(PipelineTransformation):
             SELECT s.*,
                    NULLIF(s.{pc}, '')::TIMESTAMPTZ AS _posted_ts,
                    {own_kind} AS _own_kind,
-                   pa.amendment_reporting AS _pa_mode,
+                   pa.{PA.mode_col} AS _pa_mode,
                    {pa_kind} AS _pa_kind,
                    (row_number() OVER (PARTITION BY s.{self.contract_id_col}, s.{self.partner_col}
                         ORDER BY NULLIF(s.{pc}, '')::TIMESTAMPTZ ASC NULLS FIRST,
@@ -281,7 +286,7 @@ class ContractAmendments(PipelineTransformation):
                    ) AS _is_first
             FROM {src} s
             LEFT JOIN {pat} pa
-              ON pa.tspduns = s.{self.partner_col}
+              ON pa.{PA.duns_col} = s.{self.partner_col}
             WHERE lower(coalesce(s.{self.status_col}, '')) = 'fresh'
                OR NOT EXISTS (SELECT 1 FROM {tgt})
         ) f""",

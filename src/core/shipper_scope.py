@@ -54,31 +54,18 @@ from __future__ import annotations
 from typing import Dict, Optional, Tuple
 
 from ..logging_config import get_logger
+from .table_config import ShipperMapping
 
 log = get_logger(__name__)
 
-#: Table the dashboard writes shipper rows into. Lives in the Bronze schema
-#: because it scopes Bronze, and because it is configuration for the raw feed
-#: rather than a curated Silver output.
-TABLE = "shipper_mapping"
-
-#: Bronze table -> (DUNS column, name column). The dashboard always calls these
-#: "KHolderNumber" and "KHolderName"; the feeds do not.
-#:
-#:   gtran_firm / gtran_it   kholder      / kholdername    (transactional reporting)
-#:   gawd                    bidderduns   / biddername     (capacity awards)
-#:   gindex                  shipperduns  / shipper        (contract index)
-#:
-#: Add a row here when a new Bronze feed arrives; nothing else needs changing.
-SHIPPER_KEYS: Dict[str, Tuple[str, str]] = {
-    "gtran_firm": ("kholder", "kholdername"),
-    "gtran_it": ("kholder", "kholdername"),
-    "gawd": ("bidderduns", "biddername"),
-    "gindex": ("shipperduns", "shipper"),
-}
-
-ADD = "add"
-REMOVE = "remove"
+# The table name, the per-feed DUNS/name columns, and the two row actions all
+# live in core/table_config.py (ShipperMapping) -- change them there. These
+# module-level names are kept so every existing consumer (dedup, run.py
+# --shippers) reads the same values.
+TABLE = ShipperMapping.table
+SHIPPER_KEYS: Dict[str, Tuple[str, str]] = ShipperMapping.keys
+ADD = ShipperMapping.ADD
+REMOVE = ShipperMapping.REMOVE
 
 
 def ddl(schema: str) -> str:

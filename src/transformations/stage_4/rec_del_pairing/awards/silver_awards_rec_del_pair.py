@@ -46,7 +46,6 @@ class SilverAwardsRecDelPair(RecDelPairingTransformation):
     name = "silver_awards_rec_del_pair"
     table_name = "awards_rec_del_pair"
     entity = "awards"
-    locations_table = "awards_locations"
 
     column_map = {
         **RecDelPairingTransformation.column_map,

@@ -47,16 +47,22 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from ....core.base import PipelineTransformation
+from ....core.table_config import LocationsSource, RecDelPairing
 
 
 class RecDelPairingTransformation(PipelineTransformation):
     # --- set these in each subclass ------------------------------------------
     entity: str = ""            # "firm" | "interruptible" | "awards"
-    locations_table: str = ""   # source table, in the decomposition schema
 
-    # Which `loc_purpose` values mean receipt vs delivery. Compared upper-cased.
-    receipt_purpose: str = "REC"
-    delivery_purpose: str = "DEL"
+    #: Source table in the decomposition schema. Left empty, it resolves from
+    #: core/table_config.py (LocationsSource) by entity -- which is where the
+    #: per-feed table names live; set it here only to override.
+    locations_table: str = ""
+
+    # Which `loc_purpose` values mean receipt vs delivery (compared
+    # upper-cased). Configured in core/table_config.py.
+    receipt_purpose: str = RecDelPairing.receipt_purpose
+    delivery_purpose: str = RecDelPairing.delivery_purpose
 
     # Logical field -> source column. Override per subclass as the real
     # decomposition tables land with their own names.
@@ -77,21 +83,23 @@ class RecDelPairingTransformation(PipelineTransformation):
     }
 
     # Optional filter applied when reading the source table (e.g. keep only
-    # successfully loaded rows). Set to None to read everything.
-    source_filter: Optional[str] = "ingestion_status = 'LOADED'"
+    # successfully loaded rows). Configured in core/table_config.py; set to
+    # None to read everything.
+    source_filter: Optional[str] = RecDelPairing.source_filter
 
     # Keeps only the newest row per (contract, location, purpose) before pairing.
     # Without this, a re-ingested location appearing twice in the source would
     # make the upsert touch the same target row twice in one statement, which
     # Postgres rejects ("ON CONFLICT DO UPDATE command cannot affect row a
-    # second time"). Set to None only if the source is already deduplicated.
-    dedupe_order: Optional[str] = "ingestion_timestamp DESC"
+    # second time"). Configured in core/table_config.py; set to None only if
+    # the source is already deduplicated.
+    dedupe_order: Optional[str] = RecDelPairing.dedupe_order
 
     def __init__(self) -> None:
         if not self.entity:
             raise ValueError(f"{type(self).__name__} must set an `entity`.")
         if not self.locations_table:
-            raise ValueError(f"{type(self).__name__} must set a `locations_table`.")
+            self.locations_table = LocationsSource.for_feed(self.entity)
         # The runner checks dependencies against this list.
         self.bronze_sources = [self.locations_table]
         # `entity` already names the JSON source feed, so --source filtering
