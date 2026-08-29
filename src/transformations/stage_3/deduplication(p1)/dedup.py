@@ -46,6 +46,7 @@ ammendments(p2), decompisition(p3) and stage 4 read.
 
 from __future__ import annotations #purely affects annotations.
 
+from ....core import shipper_scope
 from ....core.base import PipelineTransformation
 from ....core.registry import register
 
@@ -93,7 +94,7 @@ class Deduplication(PipelineTransformation):
         """Staging, not Silver -- p2/p3 and stage 4 all read from here."""
         return self.decomp_schema
 
-    #this creates an instance of the table before duplication 
+    #this creates an instance of the table before duplication
     def create_table_sql(self) -> str:
         return f"""
         CREATE SCHEMA IF NOT EXISTS {self.target_schema}; -- create staging schema if missing
@@ -107,6 +108,10 @@ class Deduplication(PipelineTransformation):
         -- is retired. No-op on a fresh table.
         ALTER TABLE {self.target_schema}.{self.table_name}
             DROP CONSTRAINT IF EXISTS uq_{self.table_name}_hash;
+
+        -- The shipper scope mapping table provisions itself here so the
+        -- predicate in transform_sql can never reference a missing table.
+        {shipper_scope.ddl(self.source_schema)}
         """
 
     #handles the actual transformation / logic for deduplicated rows.
@@ -133,6 +138,9 @@ class Deduplication(PipelineTransformation):
             SELECT 1 FROM {self.target_schema}.{self.table_name} t
             WHERE {existing} = {content}
         )
+        -- Shipper scope: rows in {self.source_schema}.shipper_mapping narrow
+        -- the feed to the configured DUNS. No rows = unscoped, all pass.
+        {shipper_scope.and_where(self.source_schema, self.source_table, self.feed, "s")}
         -- Ties within the batch: the ORDER BY makes DISTINCT ON keep the row
         -- with the lowest bronze_row_id, i.e. the earliest-loaded copy.
         ORDER BY {content}, s.bronze_row_id
@@ -163,7 +171,5 @@ class SilverAwardsDedup(Deduplication):
     table_name = "awards_dedup"
     feed = "awards"
     source_table = "gawd"
-
-
 
 # No IOC class: gindex goes to Silver without a deduplication phase.
