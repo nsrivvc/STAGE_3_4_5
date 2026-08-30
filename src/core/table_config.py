@@ -54,6 +54,18 @@ class PipelineAttributes:
     ALL_DATA = ("all data", "alldata", "all")
     CHANGES_ONLY = ("changes only", "changesonly", "changes")
 
+    #: COVERAGE -- whether every TSP whose amendments this phase actually
+    #: decides must have a row here. Off while the table is still being
+    #: specced: a TSP with no row legitimately falls back to its postings'
+    #: own descriptors, so an empty table changes nothing. Flip to True once
+    #: the modes are known, and a TSP being amended on descriptor guesswork
+    #: fails the run instead of quietly diverging.
+    require_coverage = False
+
+    #: TSP DUNS knowingly left on descriptor fallback -- exempt from the
+    #: coverage assert even when `require_coverage` is on.
+    coverage_exempt_duns: Tuple[str, ...] = ()
+
     @staticmethod
     def sql_list(spellings: Tuple[str, ...]) -> str:
         """The spellings as a quoted SQL IN-list: `'all data', 'alldata', ...`"""
