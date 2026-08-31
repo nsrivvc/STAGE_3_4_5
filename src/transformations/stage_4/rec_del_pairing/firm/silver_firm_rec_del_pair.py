@@ -33,5 +33,7 @@ class SilverFirmRecDelPair(RecDelPairingTransformation):
     column_map = {
         **RecDelPairingTransformation.column_map,
         "contract_key": "firmid",
+        # Quoted: `index` is a SQL keyword.
+        "loc_index": '"index"',
         "loc_qty": "kqtyloc",
     }
