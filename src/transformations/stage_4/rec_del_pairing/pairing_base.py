@@ -16,10 +16,12 @@ transform off each paired row.
     ----------------                    --------------------
     EGTS-F167  70000  REC  25000   ->   EGTS-F167  70000 -> 80000   PAIRED
     EGTS-F167  80000  DEL  25000
-    EGTS-F168  70010  REC  12000   ->   EGTS-F168  70010 -> NULL    UNPAIRED_RECEIPT
+    EGTS-F168  70010  REC  12000   ->   EGTS-F168  70010 -> NULL    RECEIPT
 
-Unpaired locations are kept, not dropped, and flagged via `pair_status`, so a
-one-sided contract is visible downstream rather than silently vanishing.
+A one-sided location is kept, not dropped: `pair_status` is PAIRED when a
+receipt and a delivery matched, and RECEIPT or DELIVERY when that side
+stands alone -- so a one-sided contract is visible downstream rather than
+silently vanishing.
 
 TWO HOOKS ARE DELIBERATELY UNIMPLEMENTED
 ----------------------------------------
@@ -193,7 +195,7 @@ class RecDelPairingTransformation(PipelineTransformation):
 
             entity_type            TEXT NOT NULL,
             contract_key           TEXT NOT NULL,
-            pair_status            TEXT NOT NULL,  -- PAIRED | UNPAIRED_RECEIPT | UNPAIRED_DELIVERY
+            pair_status            TEXT NOT NULL,  -- PAIRED | RECEIPT | DELIVERY
 
             -- receipt side
             receipt_loc_code       TEXT,
@@ -297,8 +299,8 @@ class RecDelPairingTransformation(PipelineTransformation):
             '{self.entity}',
             COALESCE(r.{key}, d.{key}),
             CASE
-                WHEN r.{key} IS NULL THEN 'UNPAIRED_DELIVERY'
-                WHEN d.{key} IS NULL THEN 'UNPAIRED_RECEIPT'
+                WHEN r.{key} IS NULL THEN 'DELIVERY'
+                WHEN d.{key} IS NULL THEN 'RECEIPT'
                 ELSE 'PAIRED'
             END,
 
