@@ -66,6 +66,26 @@ class PipelineAttributes:
     #: coverage assert even when `require_coverage` is on.
     coverage_exempt_duns: Tuple[str, ...] = ()
 
+    #: THE ONBOARDING GATE -- whether this table is treated as the register of
+    #: pipelines the warehouse is allowed to process at all.
+    #:
+    #:   False  the table only informs amendment treatment (the behaviour this
+    #:          pipeline had before the gate existed). Every TSP loads.
+    #:   True   a contract whose (DUNS, name) has no row here is HELD BACK at
+    #:          deduplication(p1) and reported at ERROR, while registered TSPs
+    #:          in the same load process exactly as normal.
+    #:
+    #: This is per-TSP, not per-run: an unregistered pipeline never costs a
+    #: registered one its load. An EMPTY register still lets everything
+    #: through, so turning this on before populating the table cannot silently
+    #: reject an entire feed. The predicate lives in core/pipeline_scope.py.
+    require_known_pipeline = True
+
+    #: Whether the gate matches on DUNS *and* name, or DUNS alone. On, a known
+    #: DUNS reporting under an unlisted name is treated as unregistered --
+    #: the pair is what identifies a pipeline.
+    match_name = True
+
     @staticmethod
     def sql_list(spellings: Tuple[str, ...]) -> str:
         """The spellings as a quoted SQL IN-list: `'all data', 'alldata', ...`"""
