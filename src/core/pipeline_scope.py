@@ -66,11 +66,17 @@ log = get_logger(__name__)
 
 TABLE = PA.table
 
-#: Bronze table -> (DUNS column, name column). Only feeds that actually carry a
-#: TSP identity are gated; anything absent here passes through untouched.
-PIPELINE_KEYS: Dict[str, Tuple[str, str]] = {
-    "gtran_firm": ("tspduns", "tspname"),
-    "gtran_it": ("tspduns", "tspname"),
+#: Bronze table -> the columns identifying the pipeline and the contract. Only
+#: feeds that actually carry a TSP identity are gated; anything absent here
+#: passes through untouched.
+#:
+#: `contract` exists so rejections are counted in CONTRACTS, not raw rows.
+#: Bronze is an append-only archive: loading the same file twice leaves two
+#: copies of every row, so a raw-row count of the same unchanged data grows
+#: with each run and reads as though the problem is getting worse.
+PIPELINE_KEYS: Dict[str, Dict[str, str]] = {
+    "gtran_firm": {"duns": "tspduns", "name": "tspname", "contract": "firmid"},
+    "gtran_it": {"duns": "tspduns", "name": "tspname", "contract": "interruptibleid"},
 }
 
 
@@ -126,7 +132,7 @@ def predicate(attr_schema: str, source_table: str, alias: str = "s") -> str:
         )
         return ""
 
-    duns_col, name_col = keys
+    duns_col, name_col = keys["duns"], keys["name"]
     tbl = f"{attr_schema}.{TABLE}"
 
     return f"""(
@@ -153,8 +159,14 @@ def and_where(attr_schema: str, source_table: str, alias: str = "s") -> str:
 
 # --------------------------------------------------------------------- report
 def uncovered(conn, attr_schema: str, src_schema: str, source_table: str
-              ) -> List[Tuple[str, str, int]]:
-    """The (DUNS, name, row count) triples this gate would hold back.
+              ) -> List[Tuple[str, str, int, int]]:
+    """The (DUNS, name, contract count, raw row count) this gate holds back.
+
+    CONTRACTS is the number that means something. Bronze is appended on every
+    load, duplicates included, so the same unchanged file loaded twice doubles
+    the raw rows for an unregistered TSP while the number of contracts actually
+    being held back has not changed at all. Reporting rows alone made a
+    steady-state rerun look like a worsening problem.
 
     Returns [] when the gate is off, the feed is not gated, or the register is
     empty -- in each of those cases nothing is being turned away.
@@ -173,15 +185,17 @@ def uncovered(conn, attr_schema: str, src_schema: str, source_table: str
     if not table_exists(conn, attr_schema, TABLE):
         return []
 
-    duns_col, name_col = keys
+    duns_col, name_col = keys["duns"], keys["name"]
+    contract_col = keys["contract"]
     tbl = f"{attr_schema}.{TABLE}"
     src = f"{src_schema}.{source_table}"
 
     return [
-        (r[0], r[1], r[2])
+        (r[0], r[1], r[2], r[3])
         for r in conn.exec_driver_sql(f"""
             SELECT btrim(coalesce(s.{duns_col}, '')) AS duns,
                    btrim(coalesce(s.{name_col}, '')) AS name,
+                   count(DISTINCT s.{contract_col}) AS contracts,
                    count(*) AS rows
             FROM {src} s
             WHERE EXISTS (SELECT 1 FROM {tbl})
@@ -190,14 +204,20 @@ def uncovered(conn, attr_schema: str, src_schema: str, source_table: str
                   WHERE {_match_clause('pa', 's', duns_col, name_col)}
               )
             GROUP BY 1, 2
-            ORDER BY rows DESC, duns
+            ORDER BY contracts DESC, duns
         """).all()
     ]
 
 
 def report_uncovered(conn, attr_schema: str, src_schema: str, source_table: str,
-                     feed: Optional[str] = None) -> List[Tuple[str, str, int]]:
+                     feed: Optional[str] = None) -> List[Tuple[str, str, int, int]]:
     """Log every TSP the gate is holding back, and return them.
+
+    Reported in CONTRACTS, with the raw row count alongside it. Bronze keeps
+    every copy of every load, so the rows for an unregistered TSP climb with
+    each rerun of the same file while the contracts held back stay put -- the
+    contract count is the one that answers "how bad is this", and the row count
+    only explains why the archive is bigger than the contract count.
 
     Logged at ERROR because a held-back contract is a real problem someone has
     to fix (register the pipeline, or correct the name it reports under) -- it
@@ -209,20 +229,22 @@ def report_uncovered(conn, attr_schema: str, src_schema: str, source_table: str,
         return []
 
     label = f" [{feed}]" if feed else ""
-    total = sum(n for _, _, n in rejected)
+    contracts = sum(c for _, _, c, _ in rejected)
     log.error(
-        "pipeline gate%s: REJECTED %s row(s) from %s unregistered TSP(s) - "
-        "not in %s.%s, so their contracts were NOT loaded into staging: %s. "
+        "pipeline gate%s: REJECTED %s contract(s) from %s unregistered TSP(s) - "
+        "not in %s.%s, so they were NOT loaded into staging: %s. "
         "Add each pipeline (DUNS + the exact name it reports under) to the "
         "register, or set PipelineAttributes.require_known_pipeline = False "
         "to let them through.",
-        label, total, len(rejected), attr_schema, TABLE,
+        label, contracts, len(rejected), attr_schema, TABLE,
         "; ".join(f"{duns or '(no duns)'} {name or '(no name)'} "
-                  f"({n} row{'s' if n != 1 else ''})" for duns, name, n in rejected),
+                  f"({c} contract{'s' if c != 1 else ''}"
+                  f"{f', {n} archived rows' if n != c else ''})"
+                  for duns, name, c, n in rejected),
     )
     # Machine-readable companion, one line per TSP, for log readers (the
     # dashboard surfaces these on the run card).
-    for duns, name, n in rejected:
-        log.error("pipeline_rejected duns=%s name=%s rows=%s feed=%s",
-                  duns or "", name or "", n, feed or "")
+    for duns, name, c, n in rejected:
+        log.error("pipeline_rejected duns=%s name=%s contracts=%s rows=%s feed=%s",
+                  duns or "", name or "", c, n, feed or "")
     return rejected
